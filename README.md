@@ -77,6 +77,10 @@ A cursor records which sections are covered. The next section is the first one
 not yet covered, not "the one after the last" — sections get skipped and
 returned to, and a high-water mark would lose that.
 
+A section is covered once every card drawn from it has been pushed or rejected.
+Coverage tracks outstanding work rather than push success, so a card Anki will
+never accept does not strand its section: rejecting it settles the section.
+
 ## State on disk
 
     sources/<slug>/
@@ -112,6 +116,8 @@ failure modes are about keeping them consistent:
 - **Partial push** — some notes were rejected, almost always as duplicates. Those
   cards stay `approved` and their section stays uncovered, so pushing again
   retries only what failed. Sections that fully succeeded are still covered.
+  A duplicate will be rejected on every retry, so rejecting the card is how you
+  settle the section and move on.
 - **`LedgerNotSaved`** — notes reached Anki but their ids could not be written to
   disk. This is the one inconsistency the harness cannot repair itself, so the
   error carries the created note ids; record them before retrying, or a re-push

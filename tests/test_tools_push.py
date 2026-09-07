@@ -302,3 +302,47 @@ def test_revise_leaves_ledger_untouched_when_anki_update_fails(workspace):
 
     (card,) = load_ledger(workspace.ledger_file("slides"))
     assert card.front == "F1", "ledger must not record an edit Anki rejected"
+
+
+def test_rejecting_an_unpushable_duplicate_releases_its_section(workspace):
+    """Anki rejects a duplicate on every retry, so the card can never be pushed.
+
+    Rejecting it is how the user settles the section. Without that release the
+    section stays "next" forever with no way past it -- and duplicates are the
+    normal failure mode, so this is the likeliest real-world stall.
+    """
+    approved(workspace, 1)
+    with FakeAnki() as fake:
+        fake.set_response("version", 6)
+        fake.set_response("createDeck", 1)
+        fake.set_response("addNotes", [None])  # always a duplicate
+        for _ in range(3):
+            push_to_anki("slides", AnkiClient(fake.url), deck="Deck", paths=workspace)
+    assert load_cursor(workspace.cursor_file("slides")).covered == []
+
+    review_cards("slides", {"c-0001": "reject"}, paths=workspace)
+    assert load_cursor(workspace.cursor_file("slides")).covered == ["1"]
+
+
+def test_a_section_is_not_covered_while_cards_await_review(workspace):
+    """Proposed cards are outstanding work: the section is not settled yet."""
+    propose_cards("slides", [{"front": "F1", "back": "B1"}], section_id="1", paths=workspace)
+    propose_cards("slides", [{"front": "F2", "back": "B2"}], section_id="1", paths=workspace)
+    review_cards("slides", {"c-0001": "approve"}, paths=workspace)
+    with FakeAnki() as fake:
+        fake.set_response("version", 6)
+        fake.set_response("createDeck", 1)
+        fake.set_response("addNotes", [1001])
+        push_to_anki("slides", AnkiClient(fake.url), deck="Deck", paths=workspace)
+    assert load_cursor(workspace.cursor_file("slides")).covered == []
+
+    review_cards("slides", {"c-0002": "reject"}, paths=workspace)
+    assert load_cursor(workspace.cursor_file("slides")).covered == ["1"]
+
+
+def test_reviewing_conversation_cards_touches_no_cursor(workspace):
+    propose_cards(
+        "conversation", [{"front": "F", "back": "B"}], section_id=None, paths=workspace
+    )
+    result = review_cards("conversation", {"c-0001": "approve"}, paths=workspace)
+    assert result["sections_covered"] == []

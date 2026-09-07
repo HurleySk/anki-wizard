@@ -225,7 +225,54 @@ def review_cards(slug: str, decisions: dict, paths: Paths) -> dict:
         updated[card_id] = card.state
 
     save_ledger(ledger_path, cards)
-    return {"updated": updated}
+    covered = _cover_settled_sections(slug, cards, paths)
+    return {"updated": updated, "sections_covered": covered}
+
+
+def _cover_settled_sections(slug: str, cards: list, paths: Paths) -> list[str]:
+    """Cover sections that have cards pushed and nothing left awaiting a push.
+
+    Coverage cannot depend only on a push succeeding. Anki rejects a duplicate
+    on every retry, so a card can be unpushable; rejecting it is how the user
+    settles the section, and without this the section would stay "next"
+    forever with no way to move past it.
+    """
+    if slug == "conversation":
+        return []
+    outline_path = paths.outline_file(slug)
+    if not outline_path.exists():
+        return []
+
+    pending: set[str] = set()
+    touched: set[str] = set()
+    for card in cards:
+        section = card.source.section
+        if not section:
+            continue
+        touched.add(section)
+        if card.state in ("proposed", "approved"):
+            pending.add(section)
+
+    # A section counts as settled once every card drawn from it has reached a
+    # terminal or pushed state -- including the case where they were all
+    # rejected, which is the user deciding the section yielded nothing worth
+    # keeping. Requiring a pushed card would leave that section stuck.
+    settled = touched - pending
+    if not settled:
+        return []
+
+    outline = load_outline(outline_path)
+    cursor_path = paths.cursor_file(slug)
+    cursor = load_cursor(cursor_path)
+    newly: list[str] = []
+    for section_id in sorted(settled):
+        if section_id in cursor.covered or outline.section(section_id) is None:
+            continue
+        cursor = advance(outline, cursor, section_id)
+        newly.append(section_id)
+    if newly:
+        save_cursor(cursor_path, cursor)
+    return newly
 
 
 def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict:
@@ -252,14 +299,11 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
     )
 
     pushed_sections: set[str] = set()
-    failed_sections: set[str] = set()
     pushed = 0
     failed = 0
     for (index, card), note_id in zip(pending, note_ids):
         if note_id is None:
             failed += 1
-            if card.source.section:
-                failed_sections.add(card.source.section)
             cards[index] = replace(
                 card,
                 history=card.history + [{"at": _now(), "action": "push-failed"}],
@@ -291,20 +335,10 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
             f"{created}"
         ) from exc
 
-    # A failure is per-card, so coverage is withheld per-section rather than
-    # across the whole push. A section that fully succeeded must be covered
-    # even if some other section failed: its cards are now pushed, so they
-    # never re-enter `pending`, and nothing would ever cover it on a retry.
-    coverable = pushed_sections - failed_sections
-    advanced: list[str] = []
-    if coverable:
-        outline = _require_outline(slug, paths)
-        cursor_path = paths.cursor_file(slug)
-        cursor = load_cursor(cursor_path)
-        for section_id in sorted(coverable):
-            cursor = advance(outline, cursor, section_id)
-            advanced.append(section_id)
-        save_cursor(cursor_path, cursor)
+    # A section is covered once it has cards in Anki and nothing left awaiting
+    # a push -- the same rule review_cards applies, so a section blocked by an
+    # unpushable duplicate is released when that card is finally rejected.
+    advanced = _cover_settled_sections(slug, cards, paths)
 
     return {
         "pushed": pushed,
