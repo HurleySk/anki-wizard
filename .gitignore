@@ -1,0 +1,18 @@
+# Brainstorming/visual-companion scratch
+.superpowers/
+
+# Design docs (kept local, not published)
+docs/superpowers/
+
+# Ingested sources and generated state
+sources/
+cards/
+config.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
