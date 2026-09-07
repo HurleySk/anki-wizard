@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "reportlab>=4.0"]
 
 [build-system]
 requires = ["hatchling"]
