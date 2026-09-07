@@ -5,11 +5,13 @@ MCP server can wrap these functions unchanged.
 """
 
 import shutil
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
-from anki_wizard.cursor import load_cursor, next_section, save_cursor
+from anki_wizard.anki import AnkiClient
+from anki_wizard.cursor import advance, load_cursor, next_section, save_cursor
 from anki_wizard.ledger import (
+    _now,
     append_cards,
     edit_card,
     load_ledger,
@@ -209,3 +211,105 @@ def review_cards(slug: str, decisions: dict, paths: Paths) -> dict:
 
     save_ledger(ledger_path, cards)
     return {"updated": updated}
+
+
+def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict:
+    """Send approved cards to Anki and record the resulting note ids.
+
+    Preflights with a version call so a closed Anki fails before anything is
+    mutated. On a partial failure the successful cards are marked pushed, the
+    rest stay approved, and the cursor does NOT advance -- so a re-push retries
+    only what failed.
+    """
+    client.version()
+
+    ledger_path = paths.ledger_file(slug)
+    cards = load_ledger(ledger_path)
+    pending = [(i, c) for i, c in enumerate(cards) if c.state == "approved"]
+    if not pending:
+        return {"pushed": 0, "failed": 0, "message": "no approved cards to push"}
+
+    client.ensure_deck(deck)
+    note_ids = client.add_notes(
+        deck,
+        [{"front": c.front, "back": c.back, "tags": c.tags} for _, c in pending],
+    )
+
+    pushed_sections: set[str] = set()
+    failed = 0
+    for (index, card), note_id in zip(pending, note_ids):
+        if note_id is None:
+            failed += 1
+            cards[index] = replace(
+                card,
+                history=card.history + [{"at": _now(), "action": "push-failed"}],
+            )
+            continue
+        cards[index] = transition(card, "pushed", anki_note_id=note_id)
+        if card.source.section:
+            pushed_sections.add(card.source.section)
+
+    save_ledger(ledger_path, cards)
+
+    advanced: list[str] = []
+    if failed == 0 and pushed_sections:
+        outline = _require_outline(slug, paths)
+        cursor_path = paths.cursor_file(slug)
+        cursor = load_cursor(cursor_path)
+        for section_id in sorted(pushed_sections):
+            cursor = advance(outline, cursor, section_id)
+            advanced.append(section_id)
+        save_cursor(cursor_path, cursor)
+
+    return {
+        "pushed": len(pending) - failed,
+        "failed": failed,
+        "sections_covered": advanced,
+        "message": (
+            "partial push: failed cards remain approved and will be retried"
+            if failed
+            else "all approved cards pushed"
+        ),
+    }
+
+
+def revise_card(
+    slug: str,
+    card_id: str,
+    client: AnkiClient,
+    paths: Paths,
+    front: str | None = None,
+    back: str | None = None,
+    tags: list[str] | None = None,
+) -> dict:
+    """Edit a card, updating Anki in place when the card has been pushed.
+
+    A pushed card keeps its scheduling and review history, which is the whole
+    reason the note id is stored. If the note has been deleted in Anki the card
+    is marked orphaned rather than silently recreated.
+    """
+    ledger_path = paths.ledger_file(slug)
+    cards = load_ledger(ledger_path)
+    index = next((i for i, c in enumerate(cards) if c.id == card_id), None)
+    if index is None:
+        raise ValueError(f"no card {card_id!r} in ledger for {slug!r}")
+    card = cards[index]
+
+    if card.state == "pushed":
+        if not client.note_exists(card.anki_note_id):
+            cards[index] = transition(card, "orphaned")
+            save_ledger(ledger_path, cards)
+            return {
+                "id": card_id,
+                "state": "orphaned",
+                "message": "note no longer exists in Anki; card marked orphaned",
+            }
+
+    card = edit_card(card, front=front, back=back, tags=tags)
+
+    if card.state == "pushed":
+        client.update_note_fields(card.anki_note_id, card.front, card.back)
+
+    cards[index] = card
+    save_ledger(ledger_path, cards)
+    return {"id": card_id, "state": card.state, "message": "card revised"}
