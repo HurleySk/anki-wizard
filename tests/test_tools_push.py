@@ -179,3 +179,26 @@ def test_revise_unpushed_card_edits_ledger_only(workspace):
         )
     assert result["state"] == "proposed"
     assert fake.requests == [], "must not call Anki for a card never pushed"
+
+
+def test_push_reports_note_ids_when_the_ledger_cannot_be_saved(workspace, monkeypatch):
+    """Anki and the ledger are separate stores with no shared transaction.
+
+    If notes land but their ids are not recorded, the cards stay approved and
+    the next push duplicates them. The ids must be in the error so the state
+    can be repaired.
+    """
+    from anki_wizard.tools import LedgerNotSaved
+
+    approved(workspace, 1)
+
+    def unwritable(*args, **kwargs):
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr("anki_wizard.tools.save_ledger", unwritable)
+    with FakeAnki() as fake:
+        fake.set_response("version", 6)
+        fake.set_response("createDeck", 1)
+        fake.set_response("addNotes", [1001])
+        with pytest.raises(LedgerNotSaved, match="1001"):
+            push_to_anki("slides", AnkiClient(fake.url), deck="Deck", paths=workspace)

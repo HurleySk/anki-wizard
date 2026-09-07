@@ -23,6 +23,15 @@ from anki_wizard.outline import build_outline, load_outline, save_outline
 from anki_wizard.paths import Paths
 from anki_wizard.pdf import extract_text, render_pages
 
+class LedgerNotSaved(RuntimeError):
+    """Notes reached Anki but their ids could not be recorded.
+
+    The one inconsistency this system cannot write its way out of: Anki and the
+    ledger are separate stores with no shared transaction. Carries the created
+    note ids so the state can be repaired by hand.
+    """
+
+
 DEFAULT_MAX_PAGES_PER_READ = 10
 
 TEXT_LAYER_WARNING = (
@@ -249,7 +258,24 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
         if card.source.section:
             pushed_sections.add(card.source.section)
 
-    save_ledger(ledger_path, cards)
+    try:
+        save_ledger(ledger_path, cards)
+    except OSError as exc:
+        # The notes are already in Anki. If their ids are not recorded, the
+        # cards stay approved and the next push duplicates them -- so fail
+        # loudly with the ids in the message rather than letting a disk error
+        # surface as an anonymous traceback.
+        created = {
+            card.id: note_id
+            for (_, card), note_id in zip(pending, note_ids)
+            if note_id is not None
+        }
+        raise LedgerNotSaved(
+            f"{len(created)} notes were created in Anki but the ledger at "
+            f"{ledger_path} could not be written ({exc}). Re-pushing will "
+            "duplicate them. Record these ids before retrying: "
+            f"{created}"
+        ) from exc
 
     advanced: list[str] = []
     if failed == 0 and pushed_sections:
