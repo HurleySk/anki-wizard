@@ -19,6 +19,8 @@ you approve into your Anki collection. Nothing reaches Anki without your review.
     uv sync --extra dev
     uv run pytest
 
+Test fixtures are generated on first run, so `pytest` works from a fresh clone.
+
 Optionally create `config.yaml`:
 
     anki_connect_url: http://localhost:8765
@@ -108,8 +110,8 @@ failure modes are about keeping them consistent:
   time, usually mid-sync or behind a dialog. The request may already have been
   applied, so check the collection before retrying rather than pushing again.
 - **Partial push** — some notes were rejected, almost always as duplicates. Those
-  cards stay `approved` and the cursor does not advance, so pushing again retries
-  only what failed.
+  cards stay `approved` and their section stays uncovered, so pushing again
+  retries only what failed. Sections that fully succeeded are still covered.
 - **`LedgerNotSaved`** — notes reached Anki but their ids could not be written to
   disk. This is the one inconsistency the harness cannot repair itself, so the
   error carries the created note ids; record them before retrying, or a re-push
@@ -121,7 +123,7 @@ failure modes are about keeping them consistent:
 ## Development
 
     uv run pytest                                    # the full suite
-    uv run python tests/fixtures/make_fixtures.py    # regenerate test PDFs
+    uv run python tests/fixtures/make_fixtures.py    # regenerate test PDFs by hand
     uv run python scripts/smoke.py <path-to.pdf>     # end-to-end, without Anki
 
 Test fixtures are generated rather than committed, so the repository stays

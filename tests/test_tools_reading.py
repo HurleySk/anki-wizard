@@ -97,3 +97,21 @@ def test_read_section_warns_text_layer_is_unreliable(workspace):
     ingest_source(FIXTURES / "slides.pdf", slug="slides", paths=workspace, dpi=50)
     result = read_section("slides", "1", paths=workspace)
     assert "image" in result["note"].lower()
+
+
+def test_ingest_expands_a_home_relative_path(workspace, monkeypatch, tmp_path):
+    """A leading ~ is what a user actually types, and shutil.copy2 will not expand it."""
+    home = tmp_path / "fakehome"
+    (home / "Downloads").mkdir(parents=True)
+    target = home / "Downloads" / "deck.pdf"
+    target.write_bytes((FIXTURES / "slides.pdf").read_bytes())
+    monkeypatch.setenv("HOME", str(home))
+
+    result = ingest_source("~/Downloads/deck.pdf", slug="tilde", paths=workspace, dpi=50)
+    assert result["pages"] == 4
+
+
+def test_ingest_missing_pdf_raises_before_creating_state(workspace):
+    with pytest.raises(FileNotFoundError):
+        ingest_source(FIXTURES / "nope.pdf", slug="ghost", paths=workspace, dpi=50)
+    assert not workspace.outline_file("ghost").exists()

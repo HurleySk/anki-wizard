@@ -54,6 +54,9 @@ def ingest_source(pdf: Path, slug: str, paths: Paths, dpi: int = 150) -> dict:
     Safe to re-run: pages already rendered are skipped, which is what makes an
     interrupted ingest resumable.
     """
+    pdf = Path(pdf).expanduser()
+    if not pdf.exists():
+        raise FileNotFoundError(pdf)
     paths.ensure_source_dirs(slug)
 
     stored_pdf = paths.source_pdf(slug)
@@ -153,7 +156,9 @@ def propose_cards(
     document. Nothing here touches Anki.
     """
     for proposal in proposals:
-        if not proposal.get("front", "").strip() or not proposal.get("back", "").strip():
+        if not (proposal.get("front") or "").strip() or not (
+            proposal.get("back") or ""
+        ).strip():
             raise ValueError("every card needs a non-empty front and back")
 
     if slug == "conversation":
@@ -227,9 +232,10 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
     """Send approved cards to Anki and record the resulting note ids.
 
     Preflights with a version call so a closed Anki fails before anything is
-    mutated. On a partial failure the successful cards are marked pushed, the
-    rest stay approved, and the cursor does NOT advance -- so a re-push retries
-    only what failed.
+    mutated. On a partial failure the successful cards are marked pushed and the
+    rest stay approved, so a re-push retries only what failed. Coverage is
+    withheld from any section that had a failure; sections that fully succeeded
+    are covered, since their cards will never be pending again.
     """
     client.version()
 

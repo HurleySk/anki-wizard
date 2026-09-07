@@ -13,6 +13,7 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
+from anki_wizard.atomic import write_text_atomic
 from anki_wizard.models import Outline, Section
 from anki_wizard.pdf import extract_text, page_count
 
@@ -169,15 +170,21 @@ def build_outline(pdf: Path, slug: str) -> Outline:
 
 
 def load_outline(path: Path) -> Outline:
-    raw = json.loads(path.read_text())
-    return Outline(
-        slug=raw["slug"],
-        pages=raw["pages"],
-        structure=raw["structure"],
-        sections=[Section(**s) for s in raw["sections"]],
-    )
+    try:
+        raw = json.loads(path.read_text())
+        return Outline(
+            slug=raw["slug"],
+            pages=raw["pages"],
+            structure=raw["structure"],
+            sections=[Section(**s) for s in raw["sections"]],
+        )
+    except (ValueError, TypeError, KeyError) as exc:
+        # Sits beside cursor.json and is equally hand-inspectable, so it gets
+        # hand-edited. Name the file rather than raising from three layers down.
+        raise ValueError(f"{path} is not a readable outline file: {exc}") from exc
 
 
 def save_outline(path: Path, outline: Outline) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(asdict(outline), indent=2))
+    # Atomic like the ledger and cursor: a truncated outline breaks resumption,
+    # since every other tool goes through _require_outline.
+    write_text_atomic(path, json.dumps(asdict(outline), indent=2))

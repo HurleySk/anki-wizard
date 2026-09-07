@@ -206,3 +206,13 @@ def test_bookmark_with_trailing_space_keeps_a_title(tmp_path):
     pdf = _pdf_with_bookmarks(tmp_path / "trail.pdf", 4, [("1.1 ", 0), ("1.2 Named", 2)])
     outline = build_outline(pdf, slug="trail")
     assert outline.sections[0].title
+
+
+def test_malformed_outline_names_the_file(tmp_path):
+    """outline.json sits beside cursor.json and is equally hand-editable."""
+    import pytest
+
+    path = tmp_path / "outline.json"
+    path.write_text('{"slug": "s", "pages": 2}')  # no structure, no sections
+    with pytest.raises(ValueError, match="not a readable outline file"):
+        load_outline(path)

@@ -147,3 +147,11 @@ def test_review_illegal_action_raises(workspace):
     review_cards("slides", {"c-0001": "reject"}, paths=workspace)
     with pytest.raises(ValueError, match="illegal transition"):
         review_cards("slides", {"c-0001": "approve"}, paths=workspace)
+
+
+def test_propose_rejects_none_front_with_a_clear_message(workspace):
+    """An agent assembling proposals from optional fields can produce None."""
+    with pytest.raises(ValueError, match="front and back"):
+        propose_cards(
+            "slides", [{"front": None, "back": "B"}], section_id="1", paths=workspace
+        )
