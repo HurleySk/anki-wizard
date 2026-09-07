@@ -16,3 +16,6 @@ __pycache__/
 venv/
 .pytest_cache/
 *.egg-info/
+
+# Generated test fixtures
+tests/fixtures/*.pdf
