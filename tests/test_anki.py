@@ -1,7 +1,12 @@
 # tests/test_anki.py
 import pytest
 
-from anki_wizard.anki import AnkiClient, AnkiError, AnkiNotRunning
+from anki_wizard.anki import (
+    AnkiClient,
+    AnkiError,
+    AnkiNotResponding,
+    AnkiNotRunning,
+)
 from tests.fake_anki import FakeAnki
 
 
@@ -101,3 +106,70 @@ def test_requests_use_protocol_version_6():
         fake.set_response("version", 6)
         AnkiClient(fake.url).version()
         assert fake.requests[-1]["version"] == 6
+
+
+def test_note_exists_false_when_a_different_note_comes_back():
+    """This call guards an overwrite, so a mismatched id must not read as True.
+
+    Anki recycles note ids. Answering True about some other note would send
+    updateNoteFields at a card the user actually studies from.
+    """
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [{"noteId": 999, "fields": {}}])
+        assert AnkiClient(fake.url).note_exists(1001) is False
+
+
+def test_read_timeout_raises_anki_not_responding(monkeypatch):
+    """A stalled Anki is not a closed Anki: the retry advice differs.
+
+    Anki serves AnkiConnect on its GUI thread, so a sync or a modal dialog
+    stalls the response. That is a read timeout, which is not a subclass of
+    ConnectionError and so would otherwise escape uncaught.
+    """
+    monkeypatch.setattr("anki_wizard.anki.TIMEOUT_SECONDS", 0.05)
+    with FakeAnki() as fake:
+        fake.set_response("version", 6)
+        fake.delay_seconds = 0.5
+        with pytest.raises(AnkiNotResponding, match="may already have been applied"):
+            AnkiClient(fake.url).version()
+
+
+def test_non_json_response_raises_anki_error():
+    """Something else listening on 8765 must not surface as a JSONDecodeError."""
+    with FakeAnki() as fake:
+        fake.raw_body = b"<html>not anki</html>"
+        with pytest.raises(AnkiError, match="did not return JSON"):
+            AnkiClient(fake.url).version()
+
+
+def test_non_200_status_raises_anki_error():
+    """AnkiConnect answers 200 even for protocol errors, so 500 means not-Anki."""
+    with FakeAnki() as fake:
+        fake.raw_body = b"server error"
+        fake.status = 500
+        with pytest.raises(AnkiError, match="expected 200"):
+            AnkiClient(fake.url).version()
+
+
+def test_add_notes_rejects_a_card_missing_content():
+    with FakeAnki() as fake:
+        fake.set_response("addNotes", [1001])
+        with pytest.raises(AnkiError, match="missing back"):
+            AnkiClient(fake.url).add_notes("d", [{"front": "F", "back": ""}])
+
+
+def test_add_notes_rejects_a_length_mismatch():
+    """Ids are matched to cards by position, so a short list must not pass."""
+    with FakeAnki() as fake:
+        fake.set_response("addNotes", [1001])
+        with pytest.raises(AnkiError, match="Cannot match ids to cards"):
+            AnkiClient(fake.url).add_notes(
+                "d", [{"front": "F1", "back": "B1"}, {"front": "F2", "back": "B2"}]
+            )
+
+
+def test_unstubbed_action_is_an_error_not_a_silent_none():
+    """Guards the fake itself: a forgotten stub must fail the test, not pass."""
+    with FakeAnki() as fake:
+        with pytest.raises(AnkiError, match="unsupported action"):
+            AnkiClient(fake.url).version()
