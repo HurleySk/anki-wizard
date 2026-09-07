@@ -10,6 +10,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from anki_wizard.atomic import write_text_atomic
 from anki_wizard.models import Cursor, Outline, Section
 
 
@@ -36,9 +37,14 @@ def advance(outline: Outline, cursor: Cursor, section_id: str) -> Cursor:
 def load_cursor(path: Path) -> Cursor:
     if not path.exists():
         return Cursor()
-    return Cursor(**json.loads(path.read_text()))
+    try:
+        data = json.loads(path.read_text())
+        return Cursor(**data)
+    except (ValueError, TypeError) as exc:
+        # These files are meant to be hand-inspectable, so they get hand-edited.
+        # Name the file rather than surfacing a bare TypeError from this module.
+        raise ValueError(f"{path} is not a readable cursor file: {exc}") from exc
 
 
 def save_cursor(path: Path, cursor: Cursor) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(asdict(cursor), indent=2))
+    write_text_atomic(path, json.dumps(asdict(cursor), indent=2))

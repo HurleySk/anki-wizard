@@ -1,3 +1,5 @@
+import pytest
+
 from anki_wizard.ledger import append_cards, load_ledger, next_card_id, save_ledger
 from anki_wizard.models import Card, CardSource
 
@@ -76,3 +78,65 @@ def test_append_records_history(tmp_path):
     assert len(card.history) == 1
     assert card.history[0]["action"] == "proposed"
     assert "at" in card.history[0]
+
+
+def test_edit_that_changes_nothing_records_no_history(tmp_path):
+    """History is an audit trail: it records edits that happened, not asked for.
+
+    A caller building this call from optional fields can pass all-None, or the
+    values already present. Neither is an event.
+    """
+    from anki_wizard.ledger import edit_card
+
+    card = Card(id="c-0001", front="F", back="B", source=CardSource(slug="s"))
+    assert edit_card(card, front=None, back=None, tags=None) is card
+    assert edit_card(card, front="F", back="B") is card
+    assert card.history == []
+
+
+def test_edit_that_changes_content_still_records(tmp_path):
+    from anki_wizard.ledger import edit_card
+
+    card = Card(id="c-0001", front="F", back="B", source=CardSource(slug="s"))
+    edited = edit_card(card, front="Better")
+    assert edited.front == "Better"
+    assert [h["action"] for h in edited.history] == ["edited"]
+
+
+def test_malformed_ledger_names_the_file_and_entry(tmp_path):
+    """These files are meant to be read and hand-edited, so say what is wrong."""
+    path = tmp_path / "cards" / "s.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text("- id: c-0001\n  front: F\n")  # no back, no source
+    with pytest.raises(ValueError, match="entry 0 is not a readable card"):
+        load_ledger(path)
+
+
+def test_save_ledger_is_atomic(tmp_path):
+    """A crash mid-write must not truncate the source of truth.
+
+    The ledger holds the Anki note ids of cards already in the collection, so a
+    half-written file would make a re-push duplicate them.
+    """
+    import anki_wizard.atomic as atomic
+
+    path = tmp_path / "cards" / "s.yaml"
+    cards = [Card(id="c-0001", front="F", back="B", source=CardSource(slug="s"))]
+    save_ledger(path, cards)
+    original = path.read_text()
+
+    real_replace = atomic.os.replace
+
+    def boom(src, dst):
+        raise OSError("simulated crash during rename")
+
+    atomic.os.replace = boom
+    try:
+        with pytest.raises(OSError):
+            save_ledger(path, cards + [Card(id="c-0002", front="F2", back="B2", source=CardSource(slug="s"))])
+    finally:
+        atomic.os.replace = real_replace
+
+    assert path.read_text() == original, "existing ledger must survive a failed write"
+    leftovers = [p.name for p in path.parent.iterdir() if p.name != path.name]
+    assert leftovers == [], f"temp files left behind: {leftovers}"

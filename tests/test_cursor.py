@@ -78,3 +78,18 @@ def test_cursor_round_trips_through_disk(tmp_path):
 
 def test_load_cursor_missing_file_is_empty(tmp_path):
     assert load_cursor(tmp_path / "nope.json") == Cursor()
+
+
+def test_malformed_cursor_names_the_file(tmp_path):
+    """cursor.json is meant to be inspectable, so it gets hand-edited."""
+    path = tmp_path / "cursor.json"
+    path.write_text('{"position": "1", "bogus_key": 3}')
+    with pytest.raises(ValueError, match="not a readable cursor file"):
+        load_cursor(path)
+
+
+def test_cursor_file_that_is_not_json_names_the_file(tmp_path):
+    path = tmp_path / "cursor.json"
+    path.write_text("not json at all")
+    with pytest.raises(ValueError, match="not a readable cursor file"):
+        load_cursor(path)

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from anki_wizard.atomic import write_text_atomic
 from anki_wizard.models import Card, CardSource
 
 
@@ -22,25 +23,34 @@ def load_ledger(path: Path) -> list[Card]:
     if not path.exists():
         return []
     raw = yaml.safe_load(path.read_text()) or []
-    return [
-        Card(
-            id=r["id"],
-            front=r["front"],
-            back=r["back"],
-            source=CardSource(**r["source"]),
-            state=r.get("state", "proposed"),
-            tags=r.get("tags", []),
-            anki_note_id=r.get("anki_note_id"),
-            history=r.get("history", []),
-        )
-        for r in raw
-    ]
+    cards: list[Card] = []
+    for position, r in enumerate(raw):
+        try:
+            cards.append(
+                Card(
+                    id=r["id"],
+                    front=r["front"],
+                    back=r["back"],
+                    source=CardSource(**r["source"]),
+                    state=r.get("state", "proposed"),
+                    tags=r.get("tags", []),
+                    anki_note_id=r.get("anki_note_id"),
+                    history=r.get("history", []),
+                )
+            )
+        except (KeyError, TypeError) as exc:
+            # The ledger is the source of truth and is meant to be readable, so
+            # it gets hand-edited. Say which file and which entry is wrong.
+            raise ValueError(
+                f"{path}: entry {position} is not a readable card ({exc})"
+            ) from exc
+    return cards
 
 
 def save_ledger(path: Path, cards: list[Card]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump([asdict(c) for c in cards], sort_keys=False, allow_unicode=True)
+    write_text_atomic(
+        path,
+        yaml.safe_dump([asdict(c) for c in cards], sort_keys=False, allow_unicode=True),
     )
 
 
@@ -117,10 +127,20 @@ def edit_card(
     """
     if card.state in ("rejected", "orphaned"):
         raise ValueError(f"cannot edit a {card.state} card")
+    new_front = card.front if front is None else front
+    new_back = card.back if back is None else back
+    new_tags = card.tags if tags is None else list(tags)
+    # History is an audit trail, so it records edits that happened rather than
+    # edits that were requested. A caller assembling this call from optional
+    # fields can easily pass all-None, or values equal to what is already
+    # there; neither is an event worth recording.
+    changed = (new_front, new_back, new_tags) != (card.front, card.back, card.tags)
+    if not changed:
+        return card
     return replace(
         card,
-        front=card.front if front is None else front,
-        back=card.back if back is None else back,
-        tags=card.tags if tags is None else list(tags),
+        front=new_front,
+        back=new_back,
+        tags=new_tags,
         history=card.history + [{"at": _now(), "action": "edited"}],
     )
