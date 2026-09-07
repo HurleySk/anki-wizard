@@ -9,6 +9,14 @@ from dataclasses import asdict
 from pathlib import Path
 
 from anki_wizard.cursor import load_cursor, next_section, save_cursor
+from anki_wizard.ledger import (
+    append_cards,
+    edit_card,
+    load_ledger,
+    save_ledger,
+    transition,
+)
+from anki_wizard.models import CardSource
 from anki_wizard.outline import build_outline, load_outline, save_outline
 from anki_wizard.paths import Paths
 from anki_wizard.pdf import extract_text, render_pages
@@ -118,3 +126,86 @@ def read_section(
         "truncated": truncated,
         "note": TEXT_LAYER_WARNING,
     }
+
+
+def propose_cards(
+    slug: str,
+    proposals: list[dict],
+    section_id: str | None,
+    paths: Paths,
+    default_tags: list[str] | None = None,
+) -> dict:
+    """Append proposed cards to the ledger.
+
+    Use slug="conversation" with section_id=None for cards not drawn from a
+    document. Nothing here touches Anki.
+    """
+    for proposal in proposals:
+        if not proposal.get("front", "").strip() or not proposal.get("back", "").strip():
+            raise ValueError("every card needs a non-empty front and back")
+
+    if slug == "conversation":
+        source = CardSource(slug="conversation")
+    else:
+        outline = _require_outline(slug, paths)
+        section = outline.section(section_id) if section_id else None
+        if section is None:
+            raise ValueError(f"no section {section_id!r} in source {slug!r}")
+        source = CardSource(
+            slug=slug,
+            section=section.id,
+            pages=list(range(section.start, min(section.end, outline.pages + 1))),
+        )
+
+    tags = list(default_tags or [])
+    enriched = [
+        {**p, "tags": sorted(set(list(p.get("tags", [])) + tags))} for p in proposals
+    ]
+
+    added = append_cards(paths.ledger_file(slug), enriched, source)
+    return {"added": len(added), "cards": [asdict(c) for c in added]}
+
+
+def review_cards(slug: str, decisions: dict, paths: Paths) -> dict:
+    """Apply approve, reject, and edit decisions to ledger entries.
+
+    A decision is either the string "approve"/"reject", or a dict
+    {"edit": {...}, "then": "approve"} to edit content and optionally
+    transition in one call.
+    """
+    ledger_path = paths.ledger_file(slug)
+    cards = load_ledger(ledger_path)
+    by_id = {c.id: i for i, c in enumerate(cards)}
+
+    updated: dict[str, str] = {}
+    for card_id, decision in decisions.items():
+        if card_id not in by_id:
+            raise ValueError(f"no card {card_id!r} in ledger for {slug!r}")
+        index = by_id[card_id]
+        card = cards[index]
+
+        if isinstance(decision, dict):
+            edits = decision.get("edit") or {}
+            if edits:
+                card = edit_card(
+                    card,
+                    front=edits.get("front"),
+                    back=edits.get("back"),
+                    tags=edits.get("tags"),
+                )
+            follow_up = decision.get("then")
+        else:
+            follow_up = decision
+
+        if follow_up == "approve":
+            card = transition(card, "approved")
+        elif follow_up == "reject":
+            card = transition(card, "rejected")
+        elif follow_up is not None:
+            raise ValueError(f"unknown review action {follow_up!r}")
+
+        cards[index] = card
+        updated[card_id] = card.state
+
+    save_ledger(ledger_path, cards)
+    return {"updated": updated}
