@@ -125,3 +125,84 @@ def test_outline_round_trips_through_disk(tmp_path):
     p = tmp_path / "outline.json"
     save_outline(p, o)
     assert load_outline(p) == o
+
+
+def _pdf_with_bookmarks(path: Path, pages: int, bookmarks: list[tuple[str, int]]) -> Path:
+    """Build a PDF with an embedded outline, for exercising the sections path.
+
+    `bookmarks` is (title, zero-based page index).
+    """
+    from pypdf import PdfWriter
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    for i in range(pages):
+        c.drawString(72, 720, f"page {i + 1} body text")
+        c.showPage()
+    c.save()
+    writer = PdfWriter(clone_from=str(path))
+    for title, page in bookmarks:
+        writer.add_outline_item(title, page)
+    with open(path, "wb") as fh:
+        writer.write(fh)
+    return path
+
+
+def test_repeated_bookmark_ids_stay_reachable(tmp_path):
+    """Textbooks restart subsection numbering per chapter.
+
+    The cursor keys on section id, so a duplicate would make the later section
+    unreachable and the document would report itself complete having never
+    shown those pages.
+    """
+    from anki_wizard.cursor import advance, next_section
+    from anki_wizard.models import Cursor
+
+    pdf = _pdf_with_bookmarks(
+        tmp_path / "dup.pdf",
+        6,
+        [("1.1 Intro", 0), ("1.2 Middle", 2), ("1.1 Other Chapter", 4)],
+    )
+    outline = build_outline(pdf, slug="dup")
+
+    assert len(outline.sections) == 3
+    assert len({s.id for s in outline.sections}) == 3
+
+    cursor = Cursor()
+    visited = []
+    while (section := next_section(outline, cursor)) is not None:
+        visited.append(section.title)
+        cursor = advance(outline, cursor, section.id)
+    assert visited == ["Intro", "Middle", "Other Chapter"]
+
+
+def test_bookmarks_on_the_same_page_still_span_a_page(tmp_path):
+    """A chapter heading and its first section often share a page.
+
+    Without clamping, the heading's range is empty and the agent is handed a
+    section with no pages to read.
+    """
+    pdf = _pdf_with_bookmarks(
+        tmp_path / "same.pdf",
+        4,
+        [("1 Chapter One", 0), ("1.1 First Section", 0), ("1.2 Second Section", 2)],
+    )
+    outline = build_outline(pdf, slug="same")
+
+    for section in outline.sections:
+        assert list(range(section.start, section.end)), f"{section.id} renders no pages"
+
+
+def test_numeric_only_bookmark_keeps_its_id(tmp_path):
+    """A bookmark of bare "1.1" should keep that id rather than a positional one."""
+    pdf = _pdf_with_bookmarks(tmp_path / "bare.pdf", 4, [("1.1", 0), ("1.2 Named", 2)])
+    outline = build_outline(pdf, slug="bare")
+    assert [s.id for s in outline.sections] == ["1.1", "1.2"]
+
+
+def test_bookmark_with_trailing_space_keeps_a_title(tmp_path):
+    """"1.1 " must not yield an empty title."""
+    pdf = _pdf_with_bookmarks(tmp_path / "trail.pdf", 4, [("1.1 ", 0), ("1.2 Named", 2)])
+    outline = build_outline(pdf, slug="trail")
+    assert outline.sections[0].title

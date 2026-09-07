@@ -18,7 +18,7 @@ from anki_wizard.pdf import extract_text, page_count
 
 # A section id like "1.1" or "2" leading the outline title, which we split off
 # so the id and the human title are separate fields.
-_ID_PREFIX = re.compile(r"^\s*(\d+(?:\.\d+)*)\s+(.*)$")
+_ID_PREFIX = re.compile(r"^\s*(\d+(?:\.\d+)*)(?:\s+(.*))?$")
 
 MAX_SLIDE_TITLE_WORDS = 12
 
@@ -33,6 +33,27 @@ MAX_SLIDE_PAGE_WORDS = 120
 # titles are normal. A running header on a prose document is different in
 # degree: nearly every page repeats. Only near-total repetition means prose.
 MIN_DISTINCT_TITLE_RATIO = 0.5
+
+
+def _unique_id(section_id: str, used: set[str]) -> str:
+    """Disambiguate a repeated section id, recording the result in `used`.
+
+    Section ids come from bookmark titles, which carry no uniqueness guarantee:
+    textbooks restart subsection numbering every chapter, so "1.1" routinely
+    appears more than once. The cursor treats the id as a primary key, so a
+    collision would make every section after the first unreachable -- the
+    document would report itself complete with sections never seen. Suffixing
+    keeps ids stable for the common case and distinct for the rest.
+    """
+    if section_id not in used:
+        used.add(section_id)
+        return section_id
+    suffix = 2
+    while f"{section_id}#{suffix}" in used:
+        suffix += 1
+    disambiguated = f"{section_id}#{suffix}"
+    used.add(disambiguated)
+    return disambiguated
 
 
 def _embedded_sections(pdf: Path, total: int) -> list[Section] | None:
@@ -64,14 +85,26 @@ def _embedded_sections(pdf: Path, total: int) -> list[Section] | None:
 
     found.sort(key=lambda pair: pair[1])
     sections: list[Section] = []
+    used_ids: set[str] = set()
     for index, (title, start) in enumerate(found):
         end = found[index + 1][1] if index + 1 < len(found) else total + 1
+        # Two bookmarks can point at the same page -- a chapter heading and its
+        # first section, say. Left alone that yields an empty range, so the
+        # section would render no pages at all while still being marked covered.
+        end = max(end, start + 1)
         match = _ID_PREFIX.match(title)
-        if match:
+        if match and (match.group(2) or "").strip():
             section_id, clean_title = match.group(1), match.group(2).strip()
+        elif match:
+            # "1.1" with no title text after it: keep the id, leave title bare.
+            section_id, clean_title = match.group(1), match.group(1)
         else:
             section_id, clean_title = str(index + 1), title.strip()
-        sections.append(Section(id=section_id, title=clean_title, pages=[start, end]))
+        sections.append(
+            Section(
+                id=_unique_id(section_id, used_ids), title=clean_title, pages=[start, end]
+            )
+        )
     return sections
 
 
