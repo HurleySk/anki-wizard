@@ -78,6 +78,43 @@ def test_detect_slides_rejects_empty_pages():
     assert detect_slides(["", ""]) is None
 
 
+def test_detect_slides_rejects_dense_prose_pages():
+    """Prose whose first lines happen to be short is still not a slide deck.
+
+    Without a density check this misclassifies: the lines below are distinct,
+    non-empty, and under the title-word limit, so only page density rejects them.
+    """
+    pages = [
+        "The quick brown fox jumps over the lazy dog and\n" + "filler words here " * 60,
+        "then runs far away into the deep green forest\n" + "more filler words " * 60,
+    ]
+    assert detect_slides(pages) is None
+
+
+def test_detect_slides_accepts_deck_with_repeated_and_dense_slides():
+    """A real lecture deck repeats titles across consecutive slides.
+
+    Modelled on the MITx 18.6501x deck this harness was designed against, where
+    "Probability" and "The kiss" each title several slides in a row and two of
+    47 pages run long. Rejecting on any repeat or any dense page sent that deck
+    to the bare-page fallback, which is what these thresholds exist to prevent.
+    """
+    pages = [f"Slide {n}\nbullet text" for n in range(20)]
+    pages += ["The kiss\nbullet text"] * 3
+    pages += ["Probability\nbullet text"] * 2
+    pages += ["Dense slide\n" + "word " * 150]
+    assert detect_slides(pages) is not None
+
+
+def test_detect_slides_rejects_running_header_prose():
+    """Near-total title repetition is a running header, not a deck."""
+    assert detect_slides(["Chapter 1\nbody text"] * 10) is None
+
+
+def test_detect_slides_rejects_empty_page_list():
+    assert detect_slides([]) is None
+
+
 def test_outline_round_trips_through_disk(tmp_path):
     o = Outline(
         slug="doc",

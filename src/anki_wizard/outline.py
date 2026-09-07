@@ -22,6 +22,18 @@ _ID_PREFIX = re.compile(r"^\s*(\d+(?:\.\d+)*)\s+(.*)$")
 
 MAX_SLIDE_TITLE_WORDS = 12
 
+# A slide holds a title and a few bullets; a prose page is a wall of text. Page
+# density separates the two far more reliably than title length alone, which a
+# prose document can pass by chance when its lines happen to wrap short. Real
+# decks do carry the occasional dense slide, so judge the deck by its typical
+# page rather than rejecting on any single one.
+MAX_SLIDE_PAGE_WORDS = 120
+
+# A real lecture deck continues a topic over consecutive slides, so repeated
+# titles are normal. A running header on a prose document is different in
+# degree: nearly every page repeats. Only near-total repetition means prose.
+MIN_DISTINCT_TITLE_RATIO = 0.5
+
 
 def _embedded_sections(pdf: Path, total: int) -> list[Section] | None:
     """Read the PDF's own outline, if it has usable entries."""
@@ -66,19 +78,28 @@ def _embedded_sections(pdf: Path, total: int) -> list[Section] | None:
 def detect_slides(page_texts: list[str]) -> list[str] | None:
     """Return per-page slide titles, or None if this is not a slide deck.
 
-    A slide deck has a short, distinct title as the first line of every page.
-    Repeated first lines mean a running header on a prose document, not slides.
+    A slide deck has a short, distinct title as the first line of every page,
+    and pages that are sparse rather than dense. Repeated first lines mean a
+    running header on a prose document, not slides; a page dense with text means
+    prose even when its first line happens to be short.
     """
+    if not page_texts:
+        return None
     titles: list[str] = []
+    dense_pages = 0
     for text in page_texts:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if not lines:
             return None
+        if len(text.split()) > MAX_SLIDE_PAGE_WORDS:
+            dense_pages += 1
         title = lines[0]
         if len(title.split()) > MAX_SLIDE_TITLE_WORDS:
             return None
         titles.append(title)
-    if len(set(titles)) < len(titles):
+    if dense_pages * 2 > len(page_texts):
+        return None
+    if len(set(titles)) < len(titles) * MIN_DISTINCT_TITLE_RATIO:
         return None
     return titles
 

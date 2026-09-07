@@ -14,7 +14,9 @@ class PopplerError(RuntimeError):
 
 def _run(args: list[str]) -> str:
     try:
-        result = subprocess.run(args, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            args, capture_output=True, text=True, check=True, encoding="utf-8"
+        )
     except FileNotFoundError as exc:
         raise PopplerError(
             f"{args[0]} not found. Install poppler (brew install poppler)."
