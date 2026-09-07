@@ -126,7 +126,10 @@ def edit_card(
     editing is not modelled as a state transition.
     """
     if card.state in ("rejected", "orphaned"):
-        raise ValueError(f"cannot edit a {card.state} card")
+        raise ValueError(
+            f"card {card.id} is {card.state}, which is terminal, so it cannot be "
+            "edited. Propose a new card instead."
+        )
     new_front = card.front if front is None else front
     new_back = card.back if back is None else back
     new_tags = card.tags if tags is None else list(tags)

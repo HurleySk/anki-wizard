@@ -87,5 +87,11 @@ def test_edit_can_change_tags():
 
 
 def test_edit_rejects_rejected_card():
-    with pytest.raises(ValueError, match="cannot edit"):
+    with pytest.raises(ValueError, match="terminal"):
         edit_card(a_card("rejected"), front="x")
+
+
+def test_edit_rejects_orphaned_card_with_recovery_guidance():
+    """Orphaned is terminal, so the message must say what to do instead."""
+    with pytest.raises(ValueError, match="Propose a new card"):
+        edit_card(a_card("orphaned"), front="x")

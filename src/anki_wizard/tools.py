@@ -1,4 +1,4 @@
-"""The six tools a Claude agent calls.
+"""The tools a Claude agent calls.
 
 Each returns a plain dict with no dependency on the calling conversation, so an
 MCP server can wrap these functions unchanged.
@@ -22,6 +22,7 @@ from anki_wizard.models import CardSource
 from anki_wizard.outline import build_outline, load_outline, save_outline
 from anki_wizard.paths import Paths
 from anki_wizard.pdf import extract_text, render_pages
+
 
 class LedgerNotSaved(RuntimeError):
     """Notes reached Anki but their ids could not be recorded.
@@ -245,26 +246,33 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
     )
 
     pushed_sections: set[str] = set()
+    failed_sections: set[str] = set()
+    pushed = 0
     failed = 0
     for (index, card), note_id in zip(pending, note_ids):
         if note_id is None:
             failed += 1
+            if card.source.section:
+                failed_sections.add(card.source.section)
             cards[index] = replace(
                 card,
                 history=card.history + [{"at": _now(), "action": "push-failed"}],
             )
             continue
+        pushed += 1
         cards[index] = transition(card, "pushed", anki_note_id=note_id)
+        # Conversation cards have no section and so cover nothing.
         if card.source.section:
             pushed_sections.add(card.source.section)
 
     try:
         save_ledger(ledger_path, cards)
-    except OSError as exc:
+    except Exception as exc:
         # The notes are already in Anki. If their ids are not recorded, the
         # cards stay approved and the next push duplicates them -- so fail
-        # loudly with the ids in the message rather than letting a disk error
-        # surface as an anonymous traceback.
+        # loudly with the ids in the message rather than letting the error
+        # surface anonymously. The catch is deliberately broad: what matters
+        # is that the ledger did not get written, not why.
         created = {
             card.id: note_id
             for (_, card), note_id in zip(pending, note_ids)
@@ -277,18 +285,23 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
             f"{created}"
         ) from exc
 
+    # A failure is per-card, so coverage is withheld per-section rather than
+    # across the whole push. A section that fully succeeded must be covered
+    # even if some other section failed: its cards are now pushed, so they
+    # never re-enter `pending`, and nothing would ever cover it on a retry.
+    coverable = pushed_sections - failed_sections
     advanced: list[str] = []
-    if failed == 0 and pushed_sections:
+    if coverable:
         outline = _require_outline(slug, paths)
         cursor_path = paths.cursor_file(slug)
         cursor = load_cursor(cursor_path)
-        for section_id in sorted(pushed_sections):
+        for section_id in sorted(coverable):
             cursor = advance(outline, cursor, section_id)
             advanced.append(section_id)
         save_cursor(cursor_path, cursor)
 
     return {
-        "pushed": len(pending) - failed,
+        "pushed": pushed,
         "failed": failed,
         "sections_covered": advanced,
         "message": (
