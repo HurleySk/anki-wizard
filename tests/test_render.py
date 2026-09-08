@@ -103,3 +103,45 @@ def test_step_justification_is_escaped():
 def test_steps_block_requires_at_least_one_step():
     with pytest.raises(ValueError, match="at least one step"):
         render_html([{"type": "steps", "steps": []}])
+
+
+def _a_figure():
+    """Build a figure without requiring a display."""
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib.figure import Figure
+
+    fig = Figure(figsize=(4, 2))
+    fig.add_subplot(1, 1, 1).plot([0, 1, 2], [0, 1, 4])
+    return fig
+
+
+def test_figure_is_embedded_as_a_data_uri():
+    """Self-contained: no sidecar file to lose when the page is moved.
+
+    Checks the <img> tag itself rather than just the absence of ".png" --
+    the page also has a CDN <script src> and a base64 blob, so a bare
+    substring search could pass without the image actually being inlined.
+    """
+    html = render_html([{"type": "figure", "figure": _a_figure()}])
+    assert "data:image/png;base64," in html
+    assert html.count("<img") == 1
+    img_start = html.index("<img")
+    img_tag = html[img_start:html.index(">", img_start)]
+    assert 'src="data:' in img_tag
+    assert ".png\"" not in html
+
+
+def test_figure_caption_is_rendered_and_escaped():
+    html = render_html([
+        {"type": "figure", "figure": _a_figure(), "caption": "density of a < b"}
+    ])
+    assert "a &lt; b" in html
+    assert "<figcaption>" in html
+
+
+def test_figure_without_a_caption_omits_the_element():
+    # Sound even against the base64 blob on the same page: base64's alphabet
+    # is A-Za-z0-9+/=, which cannot contain "<", so this can't false-positive.
+    html = render_html([{"type": "figure", "figure": _a_figure()}])
+    assert "<figcaption>" not in html

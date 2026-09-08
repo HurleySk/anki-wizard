@@ -8,6 +8,8 @@ The page uses the same MathJax delimiters as the cards -- \\(...\\) and \\[...\\
 -- so a formula that renders here renders in Anki.
 """
 
+import base64
+import io
 from html import escape
 
 MATHJAX_CDN = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
@@ -103,6 +105,8 @@ def _render_block(block: dict) -> str:
         if not steps:
             raise ValueError("a steps block needs at least one step")
         return "\n".join(_render_step(i, s) for i, s in enumerate(steps, 1))
+    if kind == "figure":
+        return _render_figure(block)
     raise ValueError(f"unknown block type: {kind!r}")
 
 
@@ -115,3 +119,18 @@ def _render_step(number: int, step: dict) -> str:
     if why:
         row += f'\n<div class="step-why">{escape(why)}</div>'
     return row
+
+
+def _render_figure(block: dict) -> str:
+    # Inlined rather than written alongside: the page is one artifact, so
+    # promoting or moving it cannot leave the image behind.
+    buffer = io.BytesIO()
+    block["figure"].savefig(buffer, format="png", dpi=150, bbox_inches="tight")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+
+    caption = block.get("caption")
+    caption_html = f"\n<figcaption>{escape(caption)}</figcaption>" if caption else ""
+    return (
+        f'<figure><img src="data:image/png;base64,{encoded}" alt="">'
+        f"{caption_html}</figure>"
+    )
