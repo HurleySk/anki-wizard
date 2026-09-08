@@ -40,7 +40,7 @@ Optionally create `config.yaml`:
 | `skip_section(slug, section_id, reason, paths)` | Cover a section that yields no cards, recording why. |
 | `render_pad(blocks, paths)` | Render prose, math, derivations, and plots to a local HTML page and open it. |
 | `promote_pad(name, paths)` | Keep the current pad as a named note. |
-| `push_to_anki(slug, client, deck, paths)` | Send approved cards to Anki, record note ids, advance the cursor. |
+| `push_to_anki(slug, client, deck, paths)` | Send approved cards to Anki, record note ids, advance the cursor. Cards carrying a lecture go to its subdeck. |
 | `revise_card(slug, card_id, client, paths, ...)` | Edit a card, updating Anki in place if it was already pushed. |
 
 `Session` wraps all of these, reading `config.yaml` once so you do not pass
@@ -91,6 +91,39 @@ The pad is **ephemeral**: every render replaces it. When one is worth keeping:
 Or turn it into cards through the normal flow, which is `propose_cards` with a
 topic slug. The pad is a study surface, not a second deck: it does not preview
 cards or browse the ledger, because Anki and the terminal already do those.
+
+## Lectures and subdecks
+
+A card can carry a `lecture`, and push sends it to that subdeck of the
+configured deck. The deck is the course; the field holds the path below it, so
+a unit level costs nothing extra:
+
+    # config.yaml -> deck: Fundamentals of Statistics
+
+    s.propose("stats-ch1", [...], section_id="21",
+              lecture="Unit I: Introduction to Statistics::L01 What is Statistics?")
+    s.push("stats-ch1")
+    # -> Fundamentals of Statistics
+    #      -> Unit I: Introduction to Statistics
+    #           -> L01 What is Statistics?
+
+A card without a lecture goes to the base deck, so the field is optional and
+existing ledgers keep working.
+
+The lecture is recorded per card rather than per document. One PDF can span
+several lectures, one lecture can draw on several PDFs, and conversation cards
+-- which have no document -- can be filed alongside the lecture they came up in.
+
+Moving a card between lectures preserves its review history, because Anki keeps
+scheduling on the card rather than on the deck:
+
+    s.revise("stats-ch1", "c-0007", lecture="Unit I: ...::L02 Parametric Inference")
+
+To refile a whole slug at once:
+
+    uv run python scripts/assign_lecture.py stats-ch1 \
+        "Unit I: Introduction to Statistics::L01 What is Statistics?"
+    # dry run; add --apply to make the change
 
 ## The why field
 

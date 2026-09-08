@@ -193,6 +193,21 @@ class AnkiClient:
         """Note ids matching an Anki browser search query."""
         return self._invoke("findNotes", query=query)
 
+    def change_deck(self, card_ids: list[int], deck: str) -> None:
+        """Move cards to another deck, keeping their scheduling.
+
+        Takes card ids, not note ids: a note can generate several cards and
+        Anki files each one separately. The deck must already exist.
+        """
+        self._invoke("changeDeck", cards=card_ids, deck=deck)
+
+    def cards_of_note(self, note_id: int) -> list[int]:
+        """The card ids a note generates, or an empty list if it is gone."""
+        info = self.notes_info([note_id])
+        if not info or not info[0]:
+            return []
+        return info[0].get("cards", [])
+
     def update_note_model(
         self, note_id: int, model_name: str, fields: dict[str, str], tags: list[str]
     ) -> None:

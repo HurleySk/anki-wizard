@@ -34,8 +34,19 @@ class Session:
         )
 
     def propose(
-        self, slug: str, proposals: list[dict], section_id: str | None = None
+        self,
+        slug: str,
+        proposals: list[dict],
+        section_id: str | None = None,
+        lecture: str | None = None,
     ) -> dict:
+        """Propose cards, optionally assigning them all to one lecture.
+
+        A lecture on a proposal wins over the batch argument, so a batch that
+        straddles a lecture boundary can still be sent in one call.
+        """
+        if lecture is not None:
+            proposals = [{"lecture": lecture, **p} for p in proposals]
         return tools.propose_cards(
             slug,
             proposals,
@@ -69,5 +80,5 @@ class Session:
 
     def revise(self, slug: str, card_id: str, **edits) -> dict:
         return tools.revise_card(
-            slug, card_id, self.client, paths=self.paths, **edits
+            slug, card_id, self.client, paths=self.paths, deck=self.config.deck, **edits
         )

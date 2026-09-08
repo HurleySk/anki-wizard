@@ -146,6 +146,48 @@ Pushing requires the `Basic with Why` note type in Anki. `NOTE_TYPE` in
 `anki.py` names it; `scripts/migrate_note_type.py` creates it and migrates
 existing notes.
 
+## Lectures and subdecks
+
+Cards carry an optional `lecture`, and `push_to_anki` sends them to that
+subdeck of the configured deck. The deck in `config.yaml` is the **course**;
+the field holds everything below it:
+
+    deck: Fundamentals of Statistics
+    lecture: "Unit I: Introduction to Statistics::L01 What is Statistics?"
+    -> Fundamentals of Statistics::Unit I: Introduction to Statistics::L01 What is Statistics?
+
+The field is a **subdeck path, not a bare lecture name**. That is what lets the
+unit level exist without a schema change, and what would let a further level be
+added later. A card with no lecture goes to the base deck, so the field stays
+optional.
+
+The lecture lives on the card, not on the source. One PDF can span several
+lectures, one lecture can gather cards from several PDFs, and a conversation
+card with no document at all can still be filed. Nothing infers it from the
+slug.
+
+**Confirm course, unit, and lecture names with the user before proposing cards,
+and never invent one.** An unrecognised name is a question, not a new subdeck:
+Anki creates decks on demand, so a typo silently produces a near-duplicate that
+splits reviews between them with no error to notice. Ask for the exact name, or
+offer one and have it confirmed. The unit in particular is course-level
+structure that lecture slides usually do not state.
+
+Naming follows the convention already in this collection:
+
+- course by title, not code -- `Fundamentals of Statistics`, with the code
+  carried by the `18-6501x` tag instead
+- unit as `Unit I: Introduction to Statistics` -- Roman numeral, colon, title
+- lecture as `L01 What is Statistics?` -- zero-padded number, then the title
+
+Pad the lecture number. Anki sorts deck names as text, so an unpadded scheme
+gives `L1, L10, L2` past nine.
+
+Refiling a pushed card is `revise_card(..., lecture=...)`, which moves it in
+Anki with its scheduling intact -- review history lives on the card, not the
+deck. `scripts/assign_lecture.py <slug> "<path>"` does a whole slug at once and
+dry-runs unless passed `--apply`.
+
 ## Section boundaries
 
 A section's `pages` is `[start, end)` — start inclusive, end **exclusive**. For

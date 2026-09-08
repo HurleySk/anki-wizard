@@ -33,6 +33,7 @@ def load_ledger(path: Path) -> list[Card]:
                     back=r["back"],
                     source=CardSource(**r["source"]),
                     why=r.get("why"),
+                    lecture=r.get("lecture"),
                     state=r.get("state", "proposed"),
                     tags=r.get("tags", []),
                     anki_note_id=r.get("anki_note_id"),
@@ -68,8 +69,8 @@ def next_card_id(cards: list[Card]) -> str:
 def append_cards(path: Path, proposals: list[dict], source: CardSource) -> list[Card]:
     """Append proposed cards to the ledger, assigning sequential ids.
 
-    Each proposal is a dict with `front`, `back`, and optional `why` and
-    `tags`.
+    Each proposal is a dict with `front`, `back`, and optional `why`,
+    `lecture`, and `tags`.
     """
     cards = load_ledger(path)
     added: list[Card] = []
@@ -82,6 +83,7 @@ def append_cards(path: Path, proposals: list[dict], source: CardSource) -> list[
                 slug=source.slug, section=source.section, pages=list(source.pages)
             ),
             why=proposal.get("why"),
+            lecture=proposal.get("lecture"),
             tags=list(proposal.get("tags", [])),
             history=[{"at": _now(), "action": "proposed"}],
         )

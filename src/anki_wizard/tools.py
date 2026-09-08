@@ -20,7 +20,7 @@ from anki_wizard.ledger import (
     save_ledger,
     transition,
 )
-from anki_wizard.models import CardSource
+from anki_wizard.models import Card, CardSource
 from anki_wizard.outline import build_outline, load_outline, save_outline
 from anki_wizard.paths import Paths
 from anki_wizard.pdf import extract_text, render_pages
@@ -368,6 +368,18 @@ def _cover_settled_sections(slug: str, cards: list, paths: Paths) -> list[str]:
     return newly
 
 
+
+def deck_for(deck: str, lecture: str | None) -> str:
+    """The Anki deck a card belongs in.
+
+    Anki has no deck hierarchy of its own: "::" in a name is what makes a
+    subdeck, so a lecture is joined rather than created separately. A card with
+    no lecture stays in the base deck, which is what keeps the field optional.
+    """
+    lecture = (lecture or "").strip()
+    return f"{deck}::{lecture}" if lecture else deck
+
+
 def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict:
     """Send approved cards to Anki and record the resulting note ids.
 
@@ -376,6 +388,11 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
     rest stay approved, so a re-push retries only what failed. Coverage is
     withheld from any section that had a failure; sections that fully succeeded
     are covered, since their cards will never be pending again.
+
+    Cards carrying a lecture go to a subdeck of `deck`, which means one
+    addNotes call per deck. Each call's ids are matched to that call's own
+    cards: the returned list is positional within a batch, so pairing them
+    across batches would put a note id on the wrong card.
     """
     client.version()
 
@@ -385,19 +402,26 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
     if not pending:
         return {"pushed": 0, "failed": 0, "message": "no approved cards to push"}
 
-    client.ensure_deck(deck)
-    note_ids = client.add_notes(
-        deck,
-        [
-            {"front": c.front, "back": c.back, "why": c.why, "tags": c.tags}
-            for _, c in pending
-        ],
-    )
+    batches: dict[str, list[tuple[int, Card]]] = {}
+    for index, card in pending:
+        batches.setdefault(deck_for(deck, card.lecture), []).append((index, card))
+
+    paired: list[tuple[tuple[int, Card], int | None]] = []
+    for target_deck, batch in batches.items():
+        client.ensure_deck(target_deck)
+        note_ids = client.add_notes(
+            target_deck,
+            [
+                {"front": c.front, "back": c.back, "why": c.why, "tags": c.tags}
+                for _, c in batch
+            ],
+        )
+        paired.extend(zip(batch, note_ids))
 
     pushed_sections: set[str] = set()
     pushed = 0
     failed = 0
-    for (index, card), note_id in zip(pending, note_ids):
+    for (index, card), note_id in paired:
         if note_id is None:
             failed += 1
             cards[index] = replace(
@@ -421,7 +445,7 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
         # is that the ledger did not get written, not why.
         created = {
             card.id: note_id
-            for (_, card), note_id in zip(pending, note_ids)
+            for (_, card), note_id in paired
             if note_id is not None
         }
         raise LedgerNotSaved(
@@ -457,12 +481,18 @@ def revise_card(
     back: str | None = None,
     why: str | None = None,
     tags: list[str] | None = None,
+    lecture: str | None = None,
+    deck: str | None = None,
 ) -> dict:
     """Edit a card, updating Anki in place when the card has been pushed.
 
     A pushed card keeps its scheduling and review history, which is the whole
     reason the note id is stored. If the note has been deleted in Anki the card
     is marked orphaned rather than silently recreated.
+
+    Passing a lecture refiles the card. For a pushed card that means moving it
+    between decks in Anki, which needs `deck` to build the target name; a move
+    preserves scheduling, so a misfiled card can be corrected without cost.
     """
     ledger_path = paths.ledger_file(slug)
     cards = load_ledger(ledger_path)
@@ -481,12 +511,33 @@ def revise_card(
                 "message": "note no longer exists in Anki; card marked orphaned",
             }
 
-    card = edit_card(card, front=front, back=back, why=why, tags=tags)
+    edited = edit_card(card, front=front, back=back, why=why, tags=tags)
+    content_changed = edited is not card
+    card = edited
+
+    moved = lecture is not None and lecture != card.lecture
+    if moved:
+        card = replace(
+            card,
+            lecture=lecture,
+            history=card.history + [{"at": _now(), "action": "refiled"}],
+        )
 
     if card.state == "pushed":
-        client.update_note_fields(
-            card.anki_note_id, card.front, card.back, why=card.why
-        )
+        if content_changed:
+            client.update_note_fields(
+                card.anki_note_id, card.front, card.back, why=card.why
+            )
+        if moved:
+            if deck is None:
+                raise ValueError(
+                    f"card {card_id} is pushed, so refiling it to {lecture!r} has "
+                    "to move it in Anki, which needs the base deck name. Pass "
+                    "deck=, or use Session.revise which supplies it from config."
+                )
+            target = deck_for(deck, lecture)
+            client.ensure_deck(target)
+            client.change_deck(client.cards_of_note(card.anki_note_id), target)
 
     cards[index] = card
     save_ledger(ledger_path, cards)

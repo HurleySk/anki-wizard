@@ -28,6 +28,11 @@ class Card:
     back: str
     source: CardSource
     why: str | None = None
+    # The subdeck this card belongs to, relative to the configured deck. Held
+    # per card rather than per source so one document can span several lectures
+    # and one lecture can gather cards from several documents -- including
+    # conversation cards, which have no document to inherit from.
+    lecture: str | None = None
     state: CardState = "proposed"
     tags: list[str] = field(default_factory=list)
     anki_note_id: int | None = None

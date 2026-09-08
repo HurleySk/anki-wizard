@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 class FakeAnki:
     def __init__(self):
         self.responses: dict[str, object] = {}
+        self.sequences: dict[str, list] = {}
         self.errors: dict[str, str] = {}
         self.requests: list[dict] = []
         # Overridable so tests can exercise the client against a port that is
@@ -29,6 +30,15 @@ class FakeAnki:
 
     def set_error(self, action: str, message: str) -> None:
         self.errors[action] = message
+
+    def set_sequence(self, action: str, results: list) -> None:
+        """Answer successive calls to one action with successive results.
+
+        Pushing to several decks calls addNotes once per deck and must get
+        different note ids back each time; a single fixed response would hand
+        every deck the same ids and hide a mismatch.
+        """
+        self.sequences[action] = list(results)
 
     @property
     def url(self) -> str:
@@ -55,6 +65,8 @@ class FakeAnki:
                 action = payload.get("action")
                 if action in outer.errors:
                     body = {"result": None, "error": outer.errors[action]}
+                elif outer.sequences.get(action):
+                    body = {"result": outer.sequences[action].pop(0), "error": None}
                 elif action in outer.responses:
                     body = {"result": outer.responses[action], "error": None}
                 else:
