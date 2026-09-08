@@ -18,7 +18,7 @@ Test fixtures are generated on first run, so `pytest` works from a fresh clone.
 
 ## Architecture in one pass
 
-`tools.py` holds the seven tool functions. They take explicit arguments and have
+`tools.py` holds the eight tool functions. They take explicit arguments and have
 no dependency on the calling conversation, so an MCP server can wrap them
 unchanged — keep them that way. `session.py` is the convenience layer that reads
 `config.yaml` once and supplies those arguments; it is where you add ergonomics,
