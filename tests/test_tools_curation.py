@@ -2,9 +2,16 @@ from pathlib import Path
 
 import pytest
 
+from anki_wizard.cursor import load_cursor
 from anki_wizard.ledger import load_ledger
 from anki_wizard.paths import Paths
-from anki_wizard.tools import ingest_source, propose_cards, review_cards
+from anki_wizard.tools import (
+    get_progress,
+    ingest_source,
+    propose_cards,
+    review_cards,
+    skip_section,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -192,3 +199,66 @@ def test_propose_with_a_section_still_requires_ingestion(workspace):
         propose_cards(
             "pset-3", [{"front": "F", "back": "B"}], section_id="1", paths=workspace
         )
+
+
+def test_skip_section_covers_it_without_cards(workspace):
+    """A section with nothing worth carding must still be able to settle.
+
+    Coverage is otherwise derived from cards, so a section that legitimately
+    yields none -- a title slide, a section divider -- could never be covered
+    and would block the cursor forever.
+    """
+    result = skip_section("slides", "1", reason="title slide", paths=workspace)
+    assert result["covered"] == ["1"]
+    assert get_progress("slides", paths=workspace)["covered"] == ["1"]
+
+
+def test_skip_section_records_the_reason(workspace):
+    """A skip is a judgment call, so it has to be auditable after the fact."""
+    skip_section("slides", "1", reason="title slide", paths=workspace)
+    cursor = load_cursor(workspace.cursor_file("slides"))
+    assert cursor.skipped == {"1": "title slide"}
+
+
+def test_skip_section_requires_a_reason(workspace):
+    """Without a reason a skip is indistinguishable from a mistake."""
+    with pytest.raises(ValueError, match="reason"):
+        skip_section("slides", "1", reason="   ", paths=workspace)
+
+
+def test_skip_section_rejects_unknown_section(workspace):
+    with pytest.raises(ValueError, match="no section"):
+        skip_section("slides", "99", reason="nothing here", paths=workspace)
+
+
+def test_skip_section_is_idempotent(workspace):
+    """Re-skipping must not duplicate coverage or stack reasons."""
+    skip_section("slides", "1", reason="title slide", paths=workspace)
+    skip_section("slides", "1", reason="still a title slide", paths=workspace)
+    cursor = load_cursor(workspace.cursor_file("slides"))
+    assert cursor.covered == ["1"]
+    assert cursor.skipped == {"1": "still a title slide"}
+
+
+def test_skip_section_refuses_a_section_that_has_cards(workspace):
+    """Cards and a skip are contradictory claims about the same section.
+
+    Silently skipping would strand proposals that the user never reviewed.
+    """
+    propose_cards(
+        "slides", [{"front": "F", "back": "B"}], section_id="1", paths=workspace
+    )
+    with pytest.raises(ValueError, match="has cards"):
+        skip_section("slides", "1", reason="changed my mind", paths=workspace)
+
+
+def test_skipped_section_is_not_returned_as_next(workspace):
+    """The whole point: a skipped section must not block the cursor."""
+    skip_section("slides", "1", reason="title slide", paths=workspace)
+    assert get_progress("slides", paths=workspace)["next"]["id"] == "2"
+
+
+def test_progress_reports_skipped_sections(workspace):
+    """Skips are visible in progress, so coverage can be read honestly."""
+    skip_section("slides", "1", reason="title slide", paths=workspace)
+    assert get_progress("slides", paths=workspace)["skipped"] == {"1": "title slide"}

@@ -44,6 +44,11 @@ class Session:
             default_tags=self.config.default_tags,
         )
 
+    def skip(self, slug: str, section_id: str, reason: str) -> dict:
+        return tools.skip_section(
+            slug, section_id, reason=reason, paths=self.paths
+        )
+
     def review(self, slug: str, decisions: dict) -> dict:
         return tools.review_cards(slug, decisions, paths=self.paths)
 

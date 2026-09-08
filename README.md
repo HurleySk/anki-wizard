@@ -37,6 +37,7 @@ Optionally create `config.yaml`:
 | `read_section(slug, section_id, paths)` | A section's page images and text. `section_id=None` reads the next uncovered section. |
 | `propose_cards(slug, proposals, section_id, paths)` | Add proposed cards to the ledger. Pass `section_id=None` with an uningested slug for cards not from a document. |
 | `review_cards(slug, decisions, paths)` | Approve, reject, or edit proposed cards. |
+| `skip_section(slug, section_id, reason, paths)` | Cover a section that yields no cards, recording why. |
 | `push_to_anki(slug, client, deck, paths)` | Send approved cards to Anki, record note ids, advance the cursor. |
 | `revise_card(slug, card_id, client, paths, ...)` | Edit a card, updating Anki in place if it was already pushed. |
 
@@ -88,6 +89,12 @@ first of these that fits:
 A cursor records which sections are covered. The next section is the first one
 not yet covered, not "the one after the last" — sections get skipped and
 returned to, and a high-water mark would lose that.
+
+Not every section earns a card. A title slide or a page of motivation holds
+nothing worth recalling, and since coverage is derived from cards, such a section
+could never settle and would block the cursor behind it. `skip_section` covers it
+explicitly and records why, so a deliberate pass stays distinguishable from lost
+work — `get_progress` reports the reasons under `skipped`.
 
 A section is covered once every card drawn from it has been pushed or rejected.
 Coverage tracks outstanding work rather than push success, so a card Anki will

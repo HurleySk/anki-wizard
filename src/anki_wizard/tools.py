@@ -94,6 +94,7 @@ def get_progress(slug: str, paths: Paths) -> dict:
         "structure": outline.structure,
         "position": cursor.position,
         "covered": cursor.covered,
+        "skipped": cursor.skipped,
         "remaining": len(outline.sections) - len(cursor.covered),
         "next": asdict(upcoming) if upcoming else None,
         "complete": upcoming is None,
@@ -229,6 +230,50 @@ def review_cards(slug: str, decisions: dict, paths: Paths) -> dict:
     save_ledger(ledger_path, cards)
     covered = _cover_settled_sections(slug, cards, paths)
     return {"updated": updated, "sections_covered": covered}
+
+
+def skip_section(slug: str, section_id: str, reason: str, paths: Paths) -> dict:
+    """Cover a section that yields no cards, recording why.
+
+    Coverage is otherwise derived from cards, so a section holding nothing worth
+    recalling -- a title slide, a section divider, a page of motivation -- could
+    never settle and would block the cursor behind it. Skipping is a curation
+    decision like rejecting a card, so it carries a reason rather than silently
+    marking the section done.
+    """
+    if not reason or not reason.strip():
+        raise ValueError("a skip needs a reason; without one it reads as lost work")
+
+    outline = _require_outline(slug, paths)
+    if outline.section(section_id) is None:
+        raise ValueError(f"no section {section_id!r} in source {slug!r}")
+
+    # Cards and a skip are contradictory claims about the same section. Skipping
+    # anyway would strand proposals the user never got to review.
+    ledger_path = paths.ledger_file(slug)
+    if ledger_path.exists():
+        live = [
+            card
+            for card in load_ledger(ledger_path)
+            if card.source.section == section_id and card.state != "rejected"
+        ]
+        if live:
+            raise ValueError(
+                f"section {section_id!r} has cards; reject them before skipping"
+            )
+
+    cursor_path = paths.cursor_file(slug)
+    cursor = load_cursor(cursor_path)
+    cursor = advance(outline, cursor, section_id)
+    cursor.skipped[section_id] = reason.strip()
+    save_cursor(cursor_path, cursor)
+
+    return {
+        "slug": slug,
+        "section": section_id,
+        "reason": reason.strip(),
+        "covered": cursor.covered,
+    }
 
 
 def _cover_settled_sections(slug: str, cards: list, paths: Paths) -> list[str]:

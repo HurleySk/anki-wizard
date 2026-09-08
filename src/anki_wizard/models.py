@@ -70,6 +70,15 @@ class Outline:
 
 @dataclass
 class Cursor:
+    """Progress through a document.
+
+    `skipped` maps a section id to why it was passed over. Coverage is otherwise
+    derived from cards, so a section that yields none -- a title slide, a divider
+    -- could never settle; recording the reason keeps that judgment auditable
+    rather than indistinguishable from lost work.
+    """
+
     position: str | None = None
     covered: list[str] = field(default_factory=list)
     updated: str | None = None
+    skipped: dict[str, str] = field(default_factory=dict)

@@ -31,6 +31,7 @@ def advance(outline: Outline, cursor: Cursor, section_id: str) -> Cursor:
         position=section_id,
         covered=covered,
         updated=datetime.now(timezone.utc).isoformat(),
+        skipped=dict(cursor.skipped),
     )
 
 

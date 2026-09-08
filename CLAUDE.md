@@ -52,6 +52,34 @@ margin note, a highlighted term, or a worked example in the instructor's hand
 exactly as you would printed material on the same slide: card it if it carries a
 fact worth recalling.
 
+## What deserves a card
+
+**Be parsimonious. A slide is not a card quota.** Most slides in a lecture deck
+earn nothing: title pages, section dividers, motivating press clippings, course
+logistics, a figure that illustrates a point made better elsewhere. Walking the
+deck and emitting a card per slide produces a deck that is expensive to review
+and teaches little.
+
+The test is not "is this true?" but **"would not knowing this cost me on an
+exam?"** Card the load-bearing content:
+
+- definitions a later result quotes by name
+- theorem statements, and their hypotheses as a separate card
+- the conditions under which a method applies or fails
+- formulas that must be reproduced from memory, not looked up
+- distinctions the course itself draws (estimator vs. estimate, probability vs.
+  statistics) — these are exam questions in the way that prose summaries are not
+
+Skip the rest. Prefer few, sharp cards over broad coverage; ten cards that carry
+a chapter beat forty that transcribe it. When a section genuinely holds nothing
+worth recalling, call `skip_section` with a reason rather than proposing a weak
+card to make the cursor move — coverage is derived from cards, so a card-less
+section cannot settle any other way.
+
+Nuance matters more than volume. When a slide states a result with a caveat, the
+caveat is usually the card — the bare result is often already intuitive, and the
+condition attached to it is what gets missed under exam pressure.
+
 ## Cards from conversation
 
 Reviewing a problem and carding what was hard is a first-class flow, not a
