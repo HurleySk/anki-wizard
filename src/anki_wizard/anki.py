@@ -160,3 +160,42 @@ class AnkiClient:
         if not info or not info[0]:
             return False
         return info[0].get("noteId") == note_id
+
+    def model_names(self) -> list[str]:
+        """Every note type in the collection."""
+        return self._invoke("modelNames")
+
+    def create_model(
+        self, name: str, fields: list[str], front: str, back: str, css: str
+    ) -> Any:
+        """Create a note type with a single card template.
+
+        AnkiConnect errors rather than overwriting when the name is taken, so
+        callers that may run twice check model_names() first.
+        """
+        return self._invoke(
+            "createModel",
+            modelName=name,
+            inOrderFields=fields,
+            css=css,
+            cardTemplates=[{"Name": "Card 1", "Front": front, "Back": back}],
+        )
+
+    def find_notes(self, query: str) -> list[int]:
+        """Note ids matching an Anki browser search query."""
+        return self._invoke("findNotes", query=query)
+
+    def change_note_type(
+        self, note_ids: list[int], model_name: str, field_map: dict[str, str]
+    ) -> None:
+        """Move notes onto another note type.
+
+        Review history lives on the card, not the note type, so scheduling
+        survives the change. field_map maps old field name to new.
+        """
+        self._invoke(
+            "changeNoteType",
+            notes=note_ids,
+            modelName=model_name,
+            fieldMap=field_map,
+        )

@@ -173,3 +173,58 @@ def test_unstubbed_action_is_an_error_not_a_silent_none():
     with FakeAnki() as fake:
         with pytest.raises(AnkiError, match="unsupported action"):
             AnkiClient(fake.url).version()
+
+
+def _sent(fake, action: str) -> dict:
+    """The params of the last request for an action."""
+    return [r for r in fake.requests if r["action"] == action][-1]["params"]
+
+
+def test_model_names_returns_the_collections_note_types():
+    with FakeAnki() as fake:
+        fake.set_response("modelNames", ["Basic", "Cloze"])
+        assert AnkiClient(fake.url).model_names() == ["Basic", "Cloze"]
+        assert _sent(fake, "modelNames") == {}
+
+
+def test_create_model_sends_fields_templates_and_css():
+    with FakeAnki() as fake:
+        fake.set_response("createModel", {"name": "Basic with Why"})
+        AnkiClient(fake.url).create_model(
+            "Basic with Why",
+            ["Front", "Back", "Why"],
+            front="{{Front}}",
+            back="{{FrontSide}}{{Back}}",
+            css=".card { color: black; }",
+        )
+
+    params = _sent(fake, "createModel")
+    assert params["modelName"] == "Basic with Why"
+    assert params["inOrderFields"] == ["Front", "Back", "Why"]
+    assert params["css"] == ".card { color: black; }"
+    assert params["cardTemplates"] == [
+        {"Name": "Card 1", "Front": "{{Front}}", "Back": "{{FrontSide}}{{Back}}"}
+    ]
+
+
+def test_find_notes_returns_matching_ids():
+    with FakeAnki() as fake:
+        fake.set_response("findNotes", [1, 2, 3])
+        found = AnkiClient(fake.url).find_notes('note:Basic deck:"anki-wizard"')
+        assert found == [1, 2, 3]
+        assert _sent(fake, "findNotes") == {"query": 'note:Basic deck:"anki-wizard"'}
+
+
+def test_change_note_type_sends_notes_model_and_field_map():
+    with FakeAnki() as fake:
+        fake.set_response("changeNoteType", None)
+        AnkiClient(fake.url).change_note_type(
+            [1, 2], "Basic with Why", {"Front": "Front", "Back": "Back"}
+        )
+
+    params = _sent(fake, "changeNoteType")
+    assert params == {
+        "notes": [1, 2],
+        "modelName": "Basic with Why",
+        "fieldMap": {"Front": "Front", "Back": "Back"},
+    }
