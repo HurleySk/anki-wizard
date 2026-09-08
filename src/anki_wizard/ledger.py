@@ -68,7 +68,8 @@ def next_card_id(cards: list[Card]) -> str:
 def append_cards(path: Path, proposals: list[dict], source: CardSource) -> list[Card]:
     """Append proposed cards to the ledger, assigning sequential ids.
 
-    Each proposal is a dict with `front`, `back`, and optional `tags`.
+    Each proposal is a dict with `front`, `back`, and optional `why` and
+    `tags`.
     """
     cards = load_ledger(path)
     added: list[Card] = []
@@ -80,6 +81,7 @@ def append_cards(path: Path, proposals: list[dict], source: CardSource) -> list[
             source=CardSource(
                 slug=source.slug, section=source.section, pages=list(source.pages)
             ),
+            why=proposal.get("why"),
             tags=list(proposal.get("tags", [])),
             history=[{"at": _now(), "action": "proposed"}],
         )

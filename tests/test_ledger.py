@@ -161,3 +161,26 @@ def test_save_ledger_is_atomic(tmp_path):
     assert path.read_text() == original, "existing ledger must survive a failed write"
     leftovers = [p.name for p in path.parent.iterdir() if p.name != path.name]
     assert leftovers == [], f"temp files left behind: {leftovers}"
+
+
+def test_a_proposal_can_carry_a_why(tmp_path):
+    """A why written at proposal time must reach the ledger.
+
+    Silently dropping it is worse than rejecting it: the caller sees a card
+    created and has no signal that the reasoning went nowhere.
+    """
+    p = tmp_path / "cards.yaml"
+    (card,) = append_cards(
+        p,
+        [{"front": "f", "back": "b", "why": "because the square of an indicator is itself"}],
+        CardSource(slug="s"),
+    )
+    assert card.why == "because the square of an indicator is itself"
+    # Round-trips rather than living only on the returned object.
+    assert load_ledger(p)[0].why == card.why
+
+
+def test_a_proposal_without_a_why_stays_none(tmp_path):
+    p = tmp_path / "cards.yaml"
+    (card,) = append_cards(p, [{"front": "f", "back": "b"}], CardSource(slug="s"))
+    assert card.why is None

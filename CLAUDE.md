@@ -139,8 +139,8 @@ the point. Leave it empty otherwise. **An empty why is better than a filler
 why:** once the field routinely carries nothing worth reading, it stops being
 read at all, and the cards that genuinely need one lose their voice.
 
-The field is not settable at proposal time — `propose_cards` takes `front`,
-`back`, and `tags` only. A why is added afterwards with `revise_card`.
+Set it at proposal time alongside `front` and `back`, or add one later with
+`revise_card`.
 
 Pushing requires the `Basic with Why` note type in Anki. `NOTE_TYPE` in
 `anki.py` names it; `scripts/migrate_note_type.py` creates it and migrates

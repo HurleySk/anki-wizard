@@ -98,7 +98,12 @@ Cards carry an optional third field holding the reasoning behind the answer. It
 renders collapsed behind a "Why?" toggle, so it never competes with the answer
 you are grading yourself on, and a card without one shows no toggle at all.
 
-    s.revise("stats-ch1", "c-0007", why="Both sides are indicators, so squaring changes nothing.")
+    s.propose("pset-3", [{"front": ..., "back": ...,
+                          "why": "Both sides are indicators, so squaring changes nothing."}])
+
+Or add one to a card that already exists:
+
+    s.revise("stats-ch1", "c-0007", why="...")
 
 This needs the `Basic with Why` note type. `scripts/migrate_note_type.py`
 creates it and moves existing notes onto it, preserving content, tags, and
