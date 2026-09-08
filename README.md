@@ -38,6 +38,8 @@ Optionally create `config.yaml`:
 | `propose_cards(slug, proposals, section_id, paths)` | Add proposed cards to the ledger. Pass `section_id=None` with an uningested slug for cards not from a document. |
 | `review_cards(slug, decisions, paths)` | Approve, reject, or edit proposed cards. |
 | `skip_section(slug, section_id, reason, paths)` | Cover a section that yields no cards, recording why. |
+| `render_pad(blocks, paths)` | Render prose, math, derivations, and plots to a local HTML page and open it. |
+| `promote_pad(name, paths)` | Keep the current pad as a named note. |
 | `push_to_anki(slug, client, deck, paths)` | Send approved cards to Anki, record note ids, advance the cursor. |
 | `revise_card(slug, card_id, client, paths, ...)` | Edit a card, updating Anki in place if it was already pushed. |
 
@@ -65,6 +67,42 @@ that was never ingested.
 Any slug works. `conversation` is the conventional catch-all, but a narrower
 name gives those cards their own ledger and keeps them findable once there are
 hundreds. Such cards carry no section or pages and never advance a cursor.
+
+## The study pad
+
+Not everything is a card. Working a derivation with the agent needs rendered
+mathematics, and LaTeX source in a terminal is unreadable.
+
+    s.pad([
+        {"type": "prose", "text": r"For an indicator, \(X^2 = X\):"},
+        {"type": "steps", "steps": [
+            {"tex": r"\mathbb{E}[X] = 0\cdot(1-p) + 1\cdot p"},
+            {"tex": "= p", "why": "the zero branch contributes nothing"},
+        ]},
+    ])
+
+This writes `pad/pad.html` and opens it. Block types are `prose`, `math`,
+`steps`, and `figure` (a matplotlib figure, embedded).
+
+The pad is **ephemeral**: every render replaces it. When one is worth keeping:
+
+    s.keep("bernoulli-moments")      # -> pad/notes/bernoulli-moments.html
+
+Or turn it into cards through the normal flow, which is `propose_cards` with a
+topic slug. The pad is a study surface, not a second deck: it does not preview
+cards or browse the ledger, because Anki and the terminal already do those.
+
+## The why field
+
+Cards carry an optional third field holding the reasoning behind the answer. It
+renders collapsed behind a "Why?" toggle, so it never competes with the answer
+you are grading yourself on, and a card without one shows no toggle at all.
+
+    s.revise("stats-ch1", "c-0007", why="Both sides are indicators, so squaring changes nothing.")
+
+This needs the `Basic with Why` note type. `scripts/migrate_note_type.py`
+creates it and moves existing notes onto it, preserving content, tags, and
+review history; it is deck-scoped and safe to re-run.
 
 ## How math is handled
 

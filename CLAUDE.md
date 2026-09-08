@@ -113,6 +113,39 @@ earlier will be rejected by Anki as a duplicate and stay `approved`. That is a
 curation question for the user: revise the original, or reject the new one.
 Do not silently pick one.
 
+## The study pad
+
+`render_pad` is for working mathematics with the user, not for previewing cards.
+Reach for it when a question needs rendered formulas, a derivation, or a plot —
+terminal LaTeX is unreadable, and that unreadability is the whole reason the pad
+exists.
+
+The pad is ephemeral by design. Do not treat replacing it as data loss, and do
+not promote one to a note on the user's behalf: keeping is their call, the same
+way approving a card is.
+
+Prefer a `steps` block over prose for a derivation, and use each step's `why` to
+name the justification. A derivation whose steps are unjustified teaches the
+manipulation without the reason, which is the failure mode the pad exists to fix.
+
+## The why field
+
+Cards have an optional third field, `why`, for the reasoning behind the answer.
+It renders collapsed on the back; a card without one renders no toggle at all.
+
+Use it where the answer alone would be memorised without being understood — a
+formula whose derivation is the actual lesson, a condition whose necessity is
+the point. Leave it empty otherwise. **An empty why is better than a filler
+why:** once the field routinely carries nothing worth reading, it stops being
+read at all, and the cards that genuinely need one lose their voice.
+
+The field is not settable at proposal time — `propose_cards` takes `front`,
+`back`, and `tags` only. A why is added afterwards with `revise_card`.
+
+Pushing requires the `Basic with Why` note type in Anki. `NOTE_TYPE` in
+`anki.py` names it; `scripts/migrate_note_type.py` creates it and migrates
+existing notes.
+
 ## Section boundaries
 
 A section's `pages` is `[start, end)` — start inclusive, end **exclusive**. For
