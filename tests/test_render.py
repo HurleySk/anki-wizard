@@ -64,3 +64,42 @@ def test_unknown_block_type_raises():
 def test_empty_block_list_still_renders_a_page():
     html = render_html([])
     assert html.startswith("<!doctype html>")
+
+
+def test_steps_render_in_order_with_numbers():
+    html = render_html([{
+        "type": "steps",
+        "steps": [
+            {"tex": r"\mathbb{E}[X] = \sum_x x\,\mathbb{P}(X=x)"},
+            {"tex": r"= 0\cdot(1-p) + 1\cdot p"},
+            {"tex": "= p"},
+        ],
+    }])
+    # Searched by their marker, not as bare digits: the page's own CSS is full
+    # of numbers (#33333a, 1.5rem), so a bare "3" matches the stylesheet first.
+    positions = [html.index(f'class="step-num">{n}</span>') for n in (1, 2, 3)]
+    assert positions == sorted(positions)
+    assert r"\[= p\]" in html
+
+
+def test_a_step_can_carry_its_justification():
+    html = render_html([{
+        "type": "steps",
+        "steps": [
+            {"tex": r"\mathbb{E}[X^2] = \mathbb{E}[X]", "why": "X is 0 or 1, so X^2 = X"},
+        ],
+    }])
+    assert "X is 0 or 1, so X^2 = X" in html
+
+
+def test_step_justification_is_escaped():
+    html = render_html([{
+        "type": "steps",
+        "steps": [{"tex": "x", "why": "since a < b"}],
+    }])
+    assert "a &lt; b" in html
+
+
+def test_steps_block_requires_at_least_one_step():
+    with pytest.raises(ValueError, match="at least one step"):
+        render_html([{"type": "steps", "steps": []}])

@@ -98,4 +98,20 @@ def _render_block(block: dict) -> str:
         return f"<p>{escape(block['text'])}</p>"
     if kind == "math":
         return f"<p>\\[{block['tex']}\\]</p>"
+    if kind == "steps":
+        steps = block["steps"]
+        if not steps:
+            raise ValueError("a steps block needs at least one step")
+        return "\n".join(_render_step(i, s) for i, s in enumerate(steps, 1))
     raise ValueError(f"unknown block type: {kind!r}")
+
+
+def _render_step(number: int, step: dict) -> str:
+    row = (
+        f'<div class="step"><span class="step-num">{number}</span>'
+        f'<span>\\[{step["tex"]}\\]</span></div>'
+    )
+    why = step.get("why")
+    if why:
+        row += f'\n<div class="step-why">{escape(why)}</div>'
+    return row
