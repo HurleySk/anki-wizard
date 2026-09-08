@@ -124,6 +124,14 @@ The pad is ephemeral by design. Do not treat replacing it as data loss, and do
 not promote one to a note on the user's behalf: keeping is their call, the same
 way approving a card is.
 
+Under the default `vscode` viewer, `render_pad` returns a URL and opens nothing.
+**Give the user that URL** -- clicking it is what puts the rendered page in a VS
+Code tab, and a pad nobody was handed a link to is a pad nobody reads.
+
+The URL is stable across renders and outlives the process that produced it, so
+re-rendering does not invalidate a link already given. The server stops itself
+once the pad goes unread; `scripts/stop_pad.py` stops one early.
+
 Prefer a `steps` block over prose for a derivation, and use each step's `why` to
 name the justification. A derivation whose steps are unjustified teaches the
 manipulation without the reason, which is the failure mode the pad exists to fix.

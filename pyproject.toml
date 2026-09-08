@@ -3,6 +3,8 @@ name = "anki-wizard"
 version = "0.1.0"
 description = "A harness for Claude agents to create and manage Anki decks"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "PyYAML>=6.0",
     "requests>=2.31",

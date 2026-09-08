@@ -38,7 +38,7 @@ Optionally create `config.yaml`:
 | `propose_cards(slug, proposals, section_id, paths)` | Add proposed cards to the ledger. Pass `section_id=None` with an uningested slug for cards not from a document. |
 | `review_cards(slug, decisions, paths)` | Approve, reject, or edit proposed cards. |
 | `skip_section(slug, section_id, reason, paths)` | Cover a section that yields no cards, recording why. |
-| `render_pad(blocks, paths)` | Render prose, math, derivations, and plots to a local HTML page and open it. |
+| `render_pad(blocks, paths, viewer)` | Render prose, math, derivations, and plots to a local HTML page, served for VS Code or opened in a browser. |
 | `promote_pad(name, paths)` | Keep the current pad as a named note. |
 | `push_to_anki(slug, client, deck, paths)` | Send approved cards to Anki, record note ids, advance the cursor. Cards carrying a lecture go to its subdeck. |
 | `revise_card(slug, card_id, client, paths, ...)` | Edit a card, updating Anki in place if it was already pushed. |
@@ -83,6 +83,32 @@ mathematics, and LaTeX source in a terminal is unreadable.
 
 This writes `pad/pad.html` and opens it. Block types are `prose`, `math`,
 `steps`, and `figure` (a matplotlib figure, embedded).
+
+Set `pad_viewer` in `config.yaml` to choose where it appears:
+
+| `pad_viewer` | What happens |
+| --- | --- |
+| `vscode` (default) | Serves `pad/` on `127.0.0.1:8899` and returns the URL. Clicking it opens the rendered page in a VS Code tab. |
+| `browser` | Opens the file directly in the default browser. |
+| `none` | Neither; the result still carries the path. |
+
+The `vscode` viewer returns a URL rather than opening anything, because nothing
+reachable from a script opens a rendered tab: VS Code's Simple Browser and the
+Live Preview extension both declare no URI handler, and there is no CLI flag to
+run an editor command. An `http://` URL that VS Code turns into a link is the
+one route that works, so the agent hands you the URL and you click it.
+
+The server runs detached, so the URL still works after the process that
+rendered the pad has exited, and a later render reuses it rather than starting
+a second. It is bound to loopback and rooted at `pad/`, so the rest of the
+repository is not exposed; kept notes under `pad/notes/` are reachable through
+the same URL.
+
+It shuts itself down once nothing has fetched the pad for
+`pad_server_timeout_minutes` (30 by default), so a forgotten server does not run
+indefinitely. To stop one early:
+
+    uv run python scripts/stop_pad.py
 
 The pad is **ephemeral**: every render replaces it. When one is worth keeping:
 
@@ -230,3 +256,7 @@ failure modes are about keeping them consistent:
 Test fixtures are generated rather than committed, so the repository stays
 text-only. The tests never contact a real Anki: `tests/fake_anki.py` serves the
 AnkiConnect protocol over a real socket.
+
+## License
+
+MIT. See `LICENSE`.

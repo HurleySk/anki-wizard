@@ -20,5 +20,5 @@ venv/
 # Generated test fixtures
 tests/fixtures/*.pdf
 
-# Study pad (ephemeral working surface)
+# Study pad (ephemeral working surface, and its server pidfile)
 pad/

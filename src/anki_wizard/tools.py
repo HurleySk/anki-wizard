@@ -5,7 +5,6 @@ MCP server can wrap these functions unchanged.
 """
 
 import shutil
-import webbrowser
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -25,6 +24,7 @@ from anki_wizard.outline import build_outline, load_outline, save_outline
 from anki_wizard.paths import Paths
 from anki_wizard.pdf import extract_text, render_pages
 from anki_wizard.render import render_html
+from anki_wizard.viewer import open_page
 
 
 class LedgerNotSaved(RuntimeError):
@@ -280,7 +280,11 @@ def skip_section(slug: str, section_id: str, reason: str, paths: Paths) -> dict:
 
 
 def render_pad(
-    blocks: list[dict], paths: Paths, open_browser: bool = True, title: str = "Study pad"
+    blocks: list[dict],
+    paths: Paths,
+    viewer: str = "vscode",
+    title: str = "Study pad",
+    server_timeout_minutes: float = 30.0,
 ) -> dict:
     """Write the scratch page and open it.
 
@@ -288,16 +292,20 @@ def render_pad(
     derivations are worth one look, and an accumulating scratch file becomes
     something to manage. promote_pad is how a page that earned its keep escapes
     that.
+
+    viewer is passed in rather than read from config so this stays wrappable by
+    an MCP server; Session supplies the user's choice.
     """
     html = render_html(blocks, title=title)
 
     pad = paths.pad_file()
     write_text_atomic(pad, html)
 
-    if open_browser:
-        webbrowser.open(pad.as_uri())
-
-    return {"path": str(pad), "blocks": len(blocks)}
+    return {
+        "path": str(pad),
+        "blocks": len(blocks),
+        **open_page(pad, viewer=viewer, idle_timeout_minutes=server_timeout_minutes),
+    }
 
 
 def promote_pad(name: str, paths: Paths) -> dict:

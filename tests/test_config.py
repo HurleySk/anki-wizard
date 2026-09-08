@@ -9,6 +9,7 @@ def test_defaults_when_file_missing(tmp_path):
     assert cfg.deck == "anki-wizard"
     assert cfg.default_tags == []
     assert cfg.max_pages_per_read == 10
+    assert cfg.pad_viewer == "vscode"
 
 
 def test_file_values_override_defaults(tmp_path):
@@ -20,6 +21,7 @@ def test_file_values_override_defaults(tmp_path):
                 "deck": "Math::Analysis",
                 "default_tags": ["auto", "math"],
                 "max_pages_per_read": 3,
+                "pad_viewer": "browser",
             }
         )
     )
@@ -28,6 +30,7 @@ def test_file_values_override_defaults(tmp_path):
     assert cfg.deck == "Math::Analysis"
     assert cfg.default_tags == ["auto", "math"]
     assert cfg.max_pages_per_read == 3
+    assert cfg.pad_viewer == "browser"
 
 
 def test_partial_file_keeps_other_defaults(tmp_path):

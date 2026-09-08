@@ -11,7 +11,7 @@ def workspace(tmp_path):
 
 def test_render_pad_writes_the_page(workspace):
     result = render_pad(
-        [{"type": "prose", "text": "hello"}], paths=workspace, open_browser=False
+        [{"type": "prose", "text": "hello"}], paths=workspace, viewer="none"
     )
     assert workspace.pad_file().exists()
     assert "hello" in workspace.pad_file().read_text()
@@ -20,28 +20,28 @@ def test_render_pad_writes_the_page(workspace):
 
 def test_render_pad_overwrites_the_previous_pad(workspace):
     """Ephemeral by default: yesterday's derivation does not linger."""
-    render_pad([{"type": "prose", "text": "OLD"}], paths=workspace, open_browser=False)
-    render_pad([{"type": "prose", "text": "NEW"}], paths=workspace, open_browser=False)
+    render_pad([{"type": "prose", "text": "OLD"}], paths=workspace, viewer="none")
+    render_pad([{"type": "prose", "text": "NEW"}], paths=workspace, viewer="none")
     text = workspace.pad_file().read_text()
     assert "NEW" in text
     assert "OLD" not in text
 
 
 def test_render_pad_creates_the_directory(workspace):
-    render_pad([{"type": "prose", "text": "x"}], paths=workspace, open_browser=False)
+    render_pad([{"type": "prose", "text": "x"}], paths=workspace, viewer="none")
     assert workspace.pad_dir().is_dir()
 
 
 def test_render_pad_rejects_an_unknown_block(workspace):
     """A bad block must fail before a half-written page reaches disk."""
     with pytest.raises(ValueError, match="unknown block type"):
-        render_pad([{"type": "nope"}], paths=workspace, open_browser=False)
+        render_pad([{"type": "nope"}], paths=workspace, viewer="none")
     assert not workspace.pad_file().exists()
 
 
 def test_promote_pad_moves_it_to_a_named_note(workspace):
     render_pad(
-        [{"type": "prose", "text": "keep me"}], paths=workspace, open_browser=False
+        [{"type": "prose", "text": "keep me"}], paths=workspace, viewer="none"
     )
     result = promote_pad("bernoulli-moments", paths=workspace)
 
@@ -53,7 +53,7 @@ def test_promote_pad_moves_it_to_a_named_note(workspace):
 
 def test_promote_pad_leaves_no_stale_pad(workspace):
     """Promotion moves rather than copies, so the next render starts clean."""
-    render_pad([{"type": "prose", "text": "x"}], paths=workspace, open_browser=False)
+    render_pad([{"type": "prose", "text": "x"}], paths=workspace, viewer="none")
     promote_pad("kept", paths=workspace)
     assert not workspace.pad_file().exists()
 
@@ -66,9 +66,9 @@ def test_promote_pad_without_a_pad_raises(workspace):
 
 def test_promote_pad_refuses_to_clobber_an_existing_note(workspace):
     """A kept note is not scratch space; overwriting one silently loses work."""
-    render_pad([{"type": "prose", "text": "first"}], paths=workspace, open_browser=False)
+    render_pad([{"type": "prose", "text": "first"}], paths=workspace, viewer="none")
     promote_pad("clt", paths=workspace)
-    render_pad([{"type": "prose", "text": "second"}], paths=workspace, open_browser=False)
+    render_pad([{"type": "prose", "text": "second"}], paths=workspace, viewer="none")
 
     with pytest.raises(FileExistsError, match="already exists"):
         promote_pad("clt", paths=workspace)
@@ -76,9 +76,14 @@ def test_promote_pad_refuses_to_clobber_an_existing_note(workspace):
 
 
 def test_promote_pad_rejects_a_traversing_name(workspace):
-    render_pad([{"type": "prose", "text": "x"}], paths=workspace, open_browser=False)
+    render_pad([{"type": "prose", "text": "x"}], paths=workspace, viewer="none")
     with pytest.raises(ValueError, match="note name"):
         promote_pad("../escape", paths=workspace)
     # The name is validated before the pad is touched -- a rejected promotion
     # must not consume the pad the user was trying to keep.
     assert workspace.pad_file().exists()
+
+
+def test_render_pad_reports_the_viewer_it_used(workspace):
+    result = render_pad([{"type": "prose", "text": "x"}], paths=workspace, viewer="none")
+    assert (result["viewer"], result["opened"]) == ("none", False)

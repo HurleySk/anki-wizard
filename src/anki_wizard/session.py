@@ -69,10 +69,14 @@ class Session:
         )
 
     def pad(
-        self, blocks: list[dict], open_browser: bool = True, title: str = "Study pad"
+        self, blocks: list[dict], viewer: str | None = None, title: str = "Study pad"
     ) -> dict:
         return tools.render_pad(
-            blocks, paths=self.paths, open_browser=open_browser, title=title
+            blocks,
+            paths=self.paths,
+            viewer=viewer or self.config.pad_viewer,
+            title=title,
+            server_timeout_minutes=self.config.pad_server_timeout_minutes,
         )
 
     def keep(self, name: str) -> dict:

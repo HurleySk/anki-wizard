@@ -16,6 +16,8 @@ class Config:
     deck: str = "anki-wizard"
     default_tags: list[str] = field(default_factory=list)
     max_pages_per_read: int = 10
+    pad_viewer: str = "vscode"
+    pad_server_timeout_minutes: float = 30.0
 
 
 def load_config(path: Path) -> Config:
@@ -28,4 +30,8 @@ def load_config(path: Path) -> Config:
         deck=raw.get("deck", defaults.deck),
         default_tags=raw.get("default_tags", defaults.default_tags),
         max_pages_per_read=raw.get("max_pages_per_read", defaults.max_pages_per_read),
+        pad_viewer=raw.get("pad_viewer", defaults.pad_viewer),
+        pad_server_timeout_minutes=raw.get(
+            "pad_server_timeout_minutes", defaults.pad_server_timeout_minutes
+        ),
     )
