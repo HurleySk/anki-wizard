@@ -155,3 +155,40 @@ def test_propose_rejects_none_front_with_a_clear_message(workspace):
         propose_cards(
             "slides", [{"front": None, "back": "B"}], section_id="1", paths=workspace
         )
+
+
+def test_propose_from_an_uningested_slug(workspace):
+    """A slug with no outline is source-less, the same as "conversation".
+
+    Grouping conversation cards by topic is what keeps them findable once there
+    are hundreds, so the outline-less path cannot be reserved for one magic
+    slug name.
+    """
+    result = propose_cards(
+        "pset-3", [{"front": "F", "back": "B"}], section_id=None, paths=workspace
+    )
+    assert result["cards"][0]["source"]["slug"] == "pset-3"
+    assert result["cards"][0]["source"]["section"] is None
+    assert result["cards"][0]["source"]["pages"] == []
+    assert load_ledger(workspace.ledger_file("pset-3"))[0].front == "F"
+
+
+def test_uningested_slug_keeps_its_own_ledger(workspace):
+    """Separate slugs must not collide in one file."""
+    propose_cards("pset-3", [{"front": "A", "back": "B"}], None, paths=workspace)
+    propose_cards("pset-4", [{"front": "C", "back": "D"}], None, paths=workspace)
+    assert [c.front for c in load_ledger(workspace.ledger_file("pset-3"))] == ["A"]
+    assert [c.front for c in load_ledger(workspace.ledger_file("pset-4"))] == ["C"]
+
+
+def test_propose_with_a_section_still_requires_ingestion(workspace):
+    """Naming a section for an uningested slug is a mistake, not a free pass.
+
+    Only section_id=None means "source-less". Asking for a section of a
+    document that was never ingested should say so rather than silently
+    dropping the provenance.
+    """
+    with pytest.raises(FileNotFoundError, match="not ingested"):
+        propose_cards(
+            "pset-3", [{"front": "F", "back": "B"}], section_id="1", paths=workspace
+        )

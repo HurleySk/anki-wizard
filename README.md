@@ -35,7 +35,7 @@ Optionally create `config.yaml`:
 | `ingest_source(pdf, slug, paths)` | Render pages, extract text, build a section map, start a cursor. Run once per document; safe to re-run after an interruption. |
 | `get_progress(slug, paths)` | What has been covered and what is next. |
 | `read_section(slug, section_id, paths)` | A section's page images and text. `section_id=None` reads the next uncovered section. |
-| `propose_cards(slug, proposals, section_id, paths)` | Add proposed cards to the ledger. Use `slug="conversation"` for cards not from a document. |
+| `propose_cards(slug, proposals, section_id, paths)` | Add proposed cards to the ledger. Pass `section_id=None` with an uningested slug for cards not from a document. |
 | `review_cards(slug, decisions, paths)` | Approve, reject, or edit proposed cards. |
 | `push_to_anki(slug, client, deck, paths)` | Send approved cards to Anki, record note ids, advance the cursor. |
 | `revise_card(slug, card_id, client, paths, ...)` | Edit a card, updating Anki in place if it was already pushed. |
@@ -52,6 +52,18 @@ Optionally create `config.yaml`:
     s.propose("lecture", [...], section_id="1")
     s.review("lecture", {"c-0001": "approve"})
     s.push("lecture")                      # needs Anki running
+
+## Cards from conversation
+
+Not every card comes from a document. Working a problem with the agent and
+carding what was hard is a first-class flow: pass `section_id=None` with a slug
+that was never ingested.
+
+    s.propose("pset-3", [{"front": ..., "back": ...}])
+
+Any slug works. `conversation` is the conventional catch-all, but a narrower
+name gives those cards their own ledger and keeps them findable once there are
+hundreds. Such cards carry no section or pages and never advance a cursor.
 
 ## How math is handled
 

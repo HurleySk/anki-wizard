@@ -52,6 +52,21 @@ margin note, a highlighted term, or a worked example in the instructor's hand
 exactly as you would printed material on the same slide: card it if it carries a
 fact worth recalling.
 
+## Cards from conversation
+
+Reviewing a problem and carding what was hard is a first-class flow, not a
+fallback. Pass `section_id=None` with a slug that was never ingested; use a
+topic slug (`pset-3`) rather than the catch-all `conversation` whenever the
+cards share a subject, since the slug is the only grouping those cards get.
+
+Cards drawn from a mistake are worth more than cards drawn from what was already
+understood. Prefer the former.
+
+Expect overlap with document cards — the same theorem carded from a slide weeks
+earlier will be rejected by Anki as a duplicate and stay `approved`. That is a
+curation question for the user: revise the original, or reject the new one.
+Do not silently pick one.
+
 ## Section boundaries
 
 A section's `pages` is `[start, end)` — start inclusive, end **exclusive**. For
@@ -70,6 +85,9 @@ duplicates cards across sections and strands coverage.
 - **Tags:** lowercase, hyphenated. Every card gets the source slug (`stats-ch1`)
   plus topic tags (`clt`, `hoeffding`). Put shared tags in `config.yaml` under
   `default_tags` rather than repeating them on every proposal.
+- Cards made from conversation rather than a document also get the tag
+  `from-conversation`, so they can be told apart in Anki, where the ledger's
+  provenance is not visible.
 - One retrievable fact per card. A theorem's statement and its hypotheses are
   usually separate cards — forgetting the hypotheses is the common failure, so
   it deserves its own retrieval path.

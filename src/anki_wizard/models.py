@@ -11,8 +11,9 @@ Structure = Literal["sections", "slides", "pages"]
 class CardSource:
     """Where a card came from.
 
-    Cards generated in conversation rather than from a document use
-    slug="conversation" and leave section and pages empty.
+    Cards generated in conversation rather than from a document leave section
+    and pages empty. Their slug names the topic they came from -- "conversation"
+    by convention, or something narrower like "pset-3" to keep them findable.
     """
 
     slug: str

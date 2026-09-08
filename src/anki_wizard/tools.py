@@ -152,8 +152,10 @@ def propose_cards(
 ) -> dict:
     """Append proposed cards to the ledger.
 
-    Use slug="conversation" with section_id=None for cards not drawn from a
-    document. Nothing here touches Anki.
+    Pass section_id=None with a slug that was never ingested for cards not drawn
+    from a document -- "conversation" is the conventional name, but any slug
+    works, which is what lets conversation cards be grouped by topic instead of
+    piling into one ledger. Nothing here touches Anki.
     """
     for proposal in proposals:
         if not (proposal.get("front") or "").strip() or not (
@@ -161,8 +163,8 @@ def propose_cards(
         ).strip():
             raise ValueError("every card needs a non-empty front and back")
 
-    if slug == "conversation":
-        source = CardSource(slug="conversation")
+    if section_id is None and not paths.outline_file(slug).exists():
+        source = CardSource(slug=slug)
     else:
         outline = _require_outline(slug, paths)
         section = outline.section(section_id) if section_id else None
@@ -237,8 +239,8 @@ def _cover_settled_sections(slug: str, cards: list, paths: Paths) -> list[str]:
     settles the section, and without this the section would stay "next"
     forever with no way to move past it.
     """
-    if slug == "conversation":
-        return []
+    # A source-less slug has no outline and so covers nothing. This subsumes
+    # the "conversation" case: there is no section map to advance through.
     outline_path = paths.outline_file(slug)
     if not outline_path.exists():
         return []
