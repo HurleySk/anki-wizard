@@ -46,3 +46,16 @@ def test_session_propose_applies_default_tags(tmp_path):
     s.ingest(FIXTURES / "slides.pdf", slug="slides", dpi=50)
     result = s.propose("slides", [{"front": "F", "back": "B"}], section_id="1")
     assert result["cards"][0]["tags"] == ["auto"]
+
+
+def test_session_pad_writes_the_page(tmp_path):
+    s = Session(root=tmp_path)
+    s.pad([{"type": "prose", "text": "from a session"}], open_browser=False)
+    assert "from a session" in s.paths.pad_file().read_text()
+
+
+def test_session_keep_promotes_the_pad(tmp_path):
+    s = Session(root=tmp_path)
+    s.pad([{"type": "prose", "text": "worth keeping"}], open_browser=False)
+    s.keep("lln")
+    assert "worth keeping" in s.paths.note_file("lln").read_text()

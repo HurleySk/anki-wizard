@@ -57,6 +57,16 @@ class Session:
             slug, self.client, deck=self.config.deck, paths=self.paths
         )
 
+    def pad(
+        self, blocks: list[dict], open_browser: bool = True, title: str = "Study pad"
+    ) -> dict:
+        return tools.render_pad(
+            blocks, paths=self.paths, open_browser=open_browser, title=title
+        )
+
+    def keep(self, name: str) -> dict:
+        return tools.promote_pad(name, paths=self.paths)
+
     def revise(self, slug: str, card_id: str, **edits) -> dict:
         return tools.revise_card(
             slug, card_id, self.client, paths=self.paths, **edits
