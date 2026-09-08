@@ -80,6 +80,24 @@ Nuance matters more than volume. When a slide states a result with a caveat, the
 caveat is usually the card — the bare result is often already intuitive, and the
 condition attached to it is what gets missed under exam pressure.
 
+**Card the concept, not the worked example.** Lecture slides teach general ideas
+through a running example — a kissing study, a coin, one particular dataset. The
+exam asks about the idea; the example is scaffolding. A front that reads "in the
+kissing study, what is \(\hat{p}\)?" tests recall of that study, and the fact
+does not transfer.
+
+Lift each card one level of abstraction above the slide:
+
+- name the general object, not the instance — *parameter vs. estimator*, not
+  *\(p\) vs. \(\hat{p}\) for couples*
+- use neutral symbols (\(X_i\), \(\theta\), \(n\)) unless the course has fixed a
+  specific notation worth memorizing
+- drop the example's numbers from the front; a concrete \(n = 124\) or
+  \(p = 0.35\) belongs on the back as illustration, if at all
+
+The example still earns a place on the back when it makes the abstraction
+concrete. It just must not be the retrieval cue.
+
 ## Cards from conversation
 
 Reviewing a problem and carding what was hard is a first-class flow, not a
