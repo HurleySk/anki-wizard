@@ -5,10 +5,12 @@ MCP server can wrap these functions unchanged.
 """
 
 import shutil
+import webbrowser
 from dataclasses import asdict, replace
 from pathlib import Path
 
 from anki_wizard.anki import AnkiClient
+from anki_wizard.atomic import write_text_atomic
 from anki_wizard.cursor import advance, load_cursor, next_section, save_cursor
 from anki_wizard.ledger import (
     _now,
@@ -22,6 +24,7 @@ from anki_wizard.models import CardSource
 from anki_wizard.outline import build_outline, load_outline, save_outline
 from anki_wizard.paths import Paths
 from anki_wizard.pdf import extract_text, render_pages
+from anki_wizard.render import render_html
 
 
 class LedgerNotSaved(RuntimeError):
@@ -274,6 +277,27 @@ def skip_section(slug: str, section_id: str, reason: str, paths: Paths) -> dict:
         "reason": reason.strip(),
         "covered": cursor.covered,
     }
+
+
+def render_pad(
+    blocks: list[dict], paths: Paths, open_browser: bool = True, title: str = "Study pad"
+) -> dict:
+    """Write the scratch page and open it.
+
+    The pad is deliberately ephemeral -- every render replaces it. Most
+    derivations are worth one look, and an accumulating scratch file becomes
+    something to manage. promote_pad is how a page that earned its keep escapes
+    that.
+    """
+    html = render_html(blocks, title=title)
+
+    pad = paths.pad_file()
+    write_text_atomic(pad, html)
+
+    if open_browser:
+        webbrowser.open(pad.as_uri())
+
+    return {"path": str(pad), "blocks": len(blocks)}
 
 
 def _cover_settled_sections(slug: str, cards: list, paths: Paths) -> list[str]:
