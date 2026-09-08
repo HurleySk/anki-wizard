@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from anki_wizard.paths import Paths
 
 
@@ -31,3 +33,24 @@ def test_ensure_source_dirs_creates_tree(tmp_path):
     assert p.pages_dir("folland").is_dir()
     assert p.text_dir("folland").is_dir()
     assert p.ledger_file("folland").parent.is_dir()
+
+
+def test_pad_and_note_paths(tmp_path):
+    p = Paths(root=tmp_path)
+    assert p.pad_file() == tmp_path / "pad" / "pad.html"
+    assert p.notes_dir() == tmp_path / "pad" / "notes"
+    assert p.note_file("bernoulli-moments") == (
+        tmp_path / "pad" / "notes" / "bernoulli-moments.html"
+    )
+
+
+def test_note_file_rejects_a_path_separator(tmp_path):
+    """A note name is one path segment, never a traversal.
+
+    The name reaches this from a conversation, so "../../etc/passwd" must not
+    resolve outside the notes directory.
+    """
+    p = Paths(root=tmp_path)
+    for bad in ("../escape", "nested/name", "/absolute", ".", ".."):
+        with pytest.raises(ValueError, match="note name"):
+            p.note_file(bad)

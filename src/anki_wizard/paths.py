@@ -46,3 +46,19 @@ class Paths:
         self.pages_dir(slug).mkdir(parents=True, exist_ok=True)
         self.text_dir(slug).mkdir(parents=True, exist_ok=True)
         self.ledger_file(slug).parent.mkdir(parents=True, exist_ok=True)
+
+    def pad_dir(self) -> Path:
+        return self.root / "pad"
+
+    def pad_file(self) -> Path:
+        return self.pad_dir() / "pad.html"
+
+    def notes_dir(self) -> Path:
+        return self.pad_dir() / "notes"
+
+    def note_file(self, name: str) -> Path:
+        # The name arrives from a conversation, so a separator or a dot segment
+        # would escape the notes directory entirely.
+        if not name or "/" in name or "\\" in name or name in (".", ".."):
+            raise ValueError(f"note name must be a single path segment: {name!r}")
+        return self.notes_dir() / f"{name}.html"
