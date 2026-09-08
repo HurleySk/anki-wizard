@@ -51,8 +51,8 @@ def test_add_notes_sends_basic_note_type_and_deck():
         )
         note = fake.requests[-1]["params"]["notes"][0]
         assert note["deckName"] == "Math::Analysis"
-        assert note["modelName"] == "Basic"
-        assert note["fields"] == {"Front": "F", "Back": "B"}
+        assert note["modelName"] == "Basic with Why"
+        assert note["fields"] == {"Front": "F", "Back": "B", "Why": ""}
         assert note["tags"] == ["m"]
 
 
@@ -77,7 +77,7 @@ def test_update_note_fields_sends_note_id():
         AnkiClient(fake.url).update_note_fields(1001, "New F", "New B")
         note = fake.requests[-1]["params"]["note"]
         assert note["id"] == 1001
-        assert note["fields"] == {"Front": "New F", "Back": "New B"}
+        assert note["fields"] == {"Front": "New F", "Back": "New B", "Why": ""}
 
 
 def test_note_exists_true_when_found():

@@ -19,6 +19,27 @@ def test_load_missing_ledger_is_empty(tmp_path):
     assert load_ledger(tmp_path / "none.yaml") == []
 
 
+def test_load_ledger_written_before_the_why_field_existed(tmp_path):
+    """Real ledgers on disk predate `why`. An entry with no such key must still
+    load, defaulting to None rather than raising."""
+    p = tmp_path / "cards.yaml"
+    p.write_text(
+        "- id: c-0001\n"
+        "  front: Front\n"
+        "  back: Back\n"
+        "  source:\n"
+        "    slug: doc\n"
+        "    section: '1.1'\n"
+        "    pages: [3]\n"
+        "  state: proposed\n"
+        "  tags: []\n"
+        "  anki_note_id: null\n"
+        "  history: []\n"
+    )
+    (loaded,) = load_ledger(p)
+    assert loaded.why is None
+
+
 def test_round_trip_preserves_all_fields(tmp_path):
     p = tmp_path / "cards.yaml"
     card = a_card(

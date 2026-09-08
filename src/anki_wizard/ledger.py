@@ -32,6 +32,7 @@ def load_ledger(path: Path) -> list[Card]:
                     front=r["front"],
                     back=r["back"],
                     source=CardSource(**r["source"]),
+                    why=r.get("why"),
                     state=r.get("state", "proposed"),
                     tags=r.get("tags", []),
                     anki_note_id=r.get("anki_note_id"),
@@ -118,6 +119,7 @@ def edit_card(
     card: Card,
     front: str | None = None,
     back: str | None = None,
+    why: str | None = None,
     tags: list[str] | None = None,
 ) -> Card:
     """Return a copy of `card` with edited content, preserving state.
@@ -132,18 +134,25 @@ def edit_card(
         )
     new_front = card.front if front is None else front
     new_back = card.back if back is None else back
+    new_why = card.why if why is None else why
     new_tags = card.tags if tags is None else list(tags)
     # History is an audit trail, so it records edits that happened rather than
     # edits that were requested. A caller assembling this call from optional
     # fields can easily pass all-None, or values equal to what is already
     # there; neither is an event worth recording.
-    changed = (new_front, new_back, new_tags) != (card.front, card.back, card.tags)
+    changed = (new_front, new_back, new_why, new_tags) != (
+        card.front,
+        card.back,
+        card.why,
+        card.tags,
+    )
     if not changed:
         return card
     return replace(
         card,
         front=new_front,
         back=new_back,
+        why=new_why,
         tags=new_tags,
         history=card.history + [{"at": _now(), "action": "edited"}],
     )

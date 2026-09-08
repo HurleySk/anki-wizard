@@ -27,6 +27,7 @@ class Card:
     front: str
     back: str
     source: CardSource
+    why: str | None = None
     state: CardState = "proposed"
     tags: list[str] = field(default_factory=list)
     anki_note_id: int | None = None

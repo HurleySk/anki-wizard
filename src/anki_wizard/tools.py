@@ -388,7 +388,10 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
     client.ensure_deck(deck)
     note_ids = client.add_notes(
         deck,
-        [{"front": c.front, "back": c.back, "tags": c.tags} for _, c in pending],
+        [
+            {"front": c.front, "back": c.back, "why": c.why, "tags": c.tags}
+            for _, c in pending
+        ],
     )
 
     pushed_sections: set[str] = set()
@@ -452,6 +455,7 @@ def revise_card(
     paths: Paths,
     front: str | None = None,
     back: str | None = None,
+    why: str | None = None,
     tags: list[str] | None = None,
 ) -> dict:
     """Edit a card, updating Anki in place when the card has been pushed.
@@ -477,10 +481,12 @@ def revise_card(
                 "message": "note no longer exists in Anki; card marked orphaned",
             }
 
-    card = edit_card(card, front=front, back=back, tags=tags)
+    card = edit_card(card, front=front, back=back, why=why, tags=tags)
 
     if card.state == "pushed":
-        client.update_note_fields(card.anki_note_id, card.front, card.back)
+        client.update_note_fields(
+            card.anki_note_id, card.front, card.back, why=card.why
+        )
 
     cards[index] = card
     save_ledger(ledger_path, cards)

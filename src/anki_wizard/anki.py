@@ -11,7 +11,7 @@ from typing import Any
 import requests
 
 ANKI_CONNECT_VERSION = 6
-NOTE_TYPE = "Basic"
+NOTE_TYPE = "Basic with Why"
 
 # Connecting is either instant or refused, so a long connect timeout only makes
 # the "Anki is closed" case slow to report. Anki answers on its GUI thread and
@@ -115,7 +115,13 @@ class AnkiClient:
                 {
                     "deckName": deck,
                     "modelName": NOTE_TYPE,
-                    "fields": {"Front": note["front"], "Back": note["back"]},
+                    "fields": {
+                        "Front": note["front"],
+                        "Back": note["back"],
+                        # Declared even when empty: Anki rejects a field name it
+                        # does not know, and an absent field is not a blank one.
+                        "Why": note.get("why") or "",
+                    },
                     "tags": note.get("tags", []),
                 }
             )
@@ -130,10 +136,15 @@ class AnkiClient:
             )
         return result
 
-    def update_note_fields(self, note_id: int, front: str, back: str) -> None:
+    def update_note_fields(
+        self, note_id: int, front: str, back: str, why: str | None = None
+    ) -> None:
         self._invoke(
             "updateNoteFields",
-            note={"id": note_id, "fields": {"Front": front, "Back": back}},
+            note={
+                "id": note_id,
+                "fields": {"Front": front, "Back": back, "Why": why or ""},
+            },
         )
 
     def note_exists(self, note_id: int) -> bool:
