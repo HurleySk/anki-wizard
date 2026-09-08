@@ -147,6 +147,14 @@ class AnkiClient:
             },
         )
 
+    def notes_info(self, note_ids: list[int]) -> list[dict]:
+        """Full records -- fields, tags, model -- for these notes.
+
+        A deleted note comes back as an empty dict in its position rather than
+        as an error, so callers must check before reading a record.
+        """
+        return self._invoke("notesInfo", notes=note_ids)
+
     def note_exists(self, note_id: int) -> bool:
         """Whether this exact note is still in the collection.
 
@@ -156,7 +164,7 @@ class AnkiClient:
         answering True about some other note would edit a card the user studies
         from.
         """
-        info = self._invoke("notesInfo", notes=[note_id])
+        info = self.notes_info([note_id])
         if not info or not info[0]:
             return False
         return info[0].get("noteId") == note_id
@@ -185,17 +193,24 @@ class AnkiClient:
         """Note ids matching an Anki browser search query."""
         return self._invoke("findNotes", query=query)
 
-    def change_note_type(
-        self, note_ids: list[int], model_name: str, field_map: dict[str, str]
+    def update_note_model(
+        self, note_id: int, model_name: str, fields: dict[str, str], tags: list[str]
     ) -> None:
-        """Move notes onto another note type.
+        """Move one note onto another note type, rewriting its content.
 
-        Review history lives on the card, not the note type, so scheduling
-        survives the change. field_map maps old field name to new.
+        Review history lives on the card rather than the note type, so the note
+        keeps its scheduling. fields is the new note's actual content keyed by
+        the target type's field names, not a mapping between field names, so a
+        caller changing type must pass the existing values through or lose them;
+        the same goes for tags, which this call replaces wholesale. Anki rejects
+        an empty fields dict.
         """
         self._invoke(
-            "changeNoteType",
-            notes=note_ids,
-            modelName=model_name,
-            fieldMap=field_map,
+            "updateNoteModel",
+            note={
+                "id": note_id,
+                "modelName": model_name,
+                "fields": fields,
+                "tags": tags,
+            },
         )

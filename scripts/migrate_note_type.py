@@ -12,7 +12,7 @@ scheduling across the change.
 import sys
 from pathlib import Path
 
-from anki_wizard.anki import NOTE_TYPE, AnkiClient
+from anki_wizard.anki import NOTE_TYPE, AnkiClient, AnkiError
 from anki_wizard.config import load_config
 from anki_wizard.paths import Paths
 
@@ -93,9 +93,46 @@ def main() -> int:
         print("  none found; nothing to migrate")
         return 0
 
-    print(f"  found {len(note_ids)} note(s); moving them to {NOTE_TYPE!r} ...")
-    client.change_note_type(note_ids, NOTE_TYPE, {"Front": "Front", "Back": "Back"})
-    print(f"  migrated {len(note_ids)} note(s); Why is empty on each")
+    # updateNoteModel rewrites one note's content wholesale, so each note's
+    # existing fields and tags have to be read back and passed through -- there
+    # is no batch form and no field-mapping shorthand.
+    print(f"  found {len(note_ids)} note(s); reading their current content ...")
+    records = client.notes_info(note_ids)
+
+    migrated = 0
+    failed: list[tuple[int, str]] = []
+    for note_id, record in zip(note_ids, records):
+        if not record:
+            failed.append((note_id, "note no longer exists"))
+            continue
+        fields = record.get("fields") or {}
+        front = (fields.get("Front") or {}).get("value", "")
+        back = (fields.get("Back") or {}).get("value", "")
+        if not front:
+            # Every field is overwritten by this call, so a note whose content
+            # did not come back would be blanked rather than converted.
+            failed.append((note_id, "could not read its Front field"))
+            continue
+        try:
+            client.update_note_model(
+                note_id,
+                NOTE_TYPE,
+                {"Front": front, "Back": back, "Why": ""},
+                list(record.get("tags") or []),
+            )
+        except AnkiError as exc:
+            # One bad note must not strand the other 31 half-migrated.
+            failed.append((note_id, str(exc)))
+            continue
+        migrated += 1
+
+    print(f"\nmigrated {migrated} of {len(note_ids)} note(s); Why is empty on each")
+    if failed:
+        print(f"{len(failed)} note(s) failed:")
+        for note_id, reason in failed:
+            print(f"  {note_id}: {reason}")
+        print("Re-running is safe: migrated notes are no longer note:Basic.")
+        return 1
     return 0
 
 

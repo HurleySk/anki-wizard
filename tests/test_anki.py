@@ -215,16 +215,37 @@ def test_find_notes_returns_matching_ids():
         assert _sent(fake, "findNotes") == {"query": 'note:Basic deck:"anki-wizard"'}
 
 
-def test_change_note_type_sends_notes_model_and_field_map():
+def test_notes_info_returns_the_records_for_the_ids():
     with FakeAnki() as fake:
-        fake.set_response("changeNoteType", None)
-        AnkiClient(fake.url).change_note_type(
-            [1, 2], "Basic with Why", {"Front": "Front", "Back": "Back"}
+        fake.set_response(
+            "notesInfo",
+            [
+                {"noteId": 1, "modelName": "Basic", "fields": {}, "tags": ["a"]},
+                {"noteId": 2, "modelName": "Basic", "fields": {}, "tags": []},
+            ],
+        )
+        info = AnkiClient(fake.url).notes_info([1, 2])
+
+    assert [record["noteId"] for record in info] == [1, 2]
+    assert _sent(fake, "notesInfo") == {"notes": [1, 2]}
+
+
+def test_update_note_model_sends_one_note_object():
+    """The real action takes a single note dict, not a batch and not a field map."""
+    with FakeAnki() as fake:
+        fake.set_response("updateNoteModel", None)
+        AnkiClient(fake.url).update_note_model(
+            1001,
+            "Basic with Why",
+            {"Front": "F", "Back": "B", "Why": ""},
+            ["stats-ch1"],
         )
 
-    params = _sent(fake, "changeNoteType")
-    assert params == {
-        "notes": [1, 2],
-        "modelName": "Basic with Why",
-        "fieldMap": {"Front": "Front", "Back": "Back"},
+    assert _sent(fake, "updateNoteModel") == {
+        "note": {
+            "id": 1001,
+            "modelName": "Basic with Why",
+            "fields": {"Front": "F", "Back": "B", "Why": ""},
+            "tags": ["stats-ch1"],
+        }
     }
