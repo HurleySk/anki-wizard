@@ -300,6 +300,28 @@ def render_pad(
     return {"path": str(pad), "blocks": len(blocks)}
 
 
+def promote_pad(name: str, paths: Paths) -> dict:
+    """Keep the current pad as a named note.
+
+    Moves rather than copies: the pad is scratch space, and leaving a duplicate
+    behind would mean the next render silently discards a page the user just
+    said was worth keeping.
+    """
+    pad = paths.pad_file()
+    if not pad.exists():
+        raise FileNotFoundError("no pad to promote; render one first")
+
+    note = paths.note_file(name)
+    if note.exists():
+        raise FileExistsError(
+            f"note {name!r} already exists at {note}; pick another name"
+        )
+
+    note.parent.mkdir(parents=True, exist_ok=True)
+    pad.rename(note)
+    return {"name": name, "path": str(note)}
+
+
 def _cover_settled_sections(slug: str, cards: list, paths: Paths) -> list[str]:
     """Cover sections that have cards pushed and nothing left awaiting a push.
 
