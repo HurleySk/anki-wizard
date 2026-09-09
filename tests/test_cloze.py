@@ -43,3 +43,25 @@ def test_nested_braces_in_math_do_not_confuse_it():
 
 def test_malformed_markup_is_ignored():
     assert cloze_numbers("{{c::no number}} {{cx::bad}} {{1::no c}}") == set()
+
+
+def test_comma_separated_ordinals():
+    """One deletion can feed several cards: {{c2,3::x}} generates both."""
+    assert cloze_numbers("{{c2,3::shared}}") == {2, 3}
+
+
+def test_partly_malformed_ordinal_keeps_its_numbers():
+    """Anki drops a non-numeric part rather than rejecting the whole marker."""
+    assert cloze_numbers("{{c1,::x}}") == {1}
+
+
+def test_a_dropped_deletion_shows_up_as_a_loss():
+    """The guard is `before - after`, so a number missed in `before` disarms it.
+
+    Tested at the level the guard actually operates, because a miss is only
+    dangerous in one direction: over-matching costs a spurious refusal, while
+    under-matching lets an edit delete a card and its review history unseen.
+    """
+    before = cloze_numbers("A {{c1::network}} connects {{c2,3::A and B}}.")
+    after = cloze_numbers("A {{c1::network}} connects A and B.")
+    assert before - after == {2, 3}
