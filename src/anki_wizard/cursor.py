@@ -5,12 +5,14 @@ deliberately not "the one after `position`". Sections get skipped and returned
 to, so a high-water mark would lose work.
 """
 
+import contextlib
 import json
+from collections.abc import Iterator
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from anki_wizard.atomic import write_text_atomic
+from anki_wizard.atomic import locked, write_text_atomic
 from anki_wizard.models import Cursor, Outline, Section
 
 
@@ -30,7 +32,7 @@ def advance(outline: Outline, cursor: Cursor, section_id: str) -> Cursor:
     return Cursor(
         position=section_id,
         covered=covered,
-        updated=datetime.now(timezone.utc).isoformat(),
+        updated=datetime.now(UTC).isoformat(),
         skipped=dict(cursor.skipped),
     )
 
@@ -49,3 +51,15 @@ def load_cursor(path: Path) -> Cursor:
 
 def save_cursor(path: Path, cursor: Cursor) -> None:
     write_text_atomic(path, json.dumps(asdict(cursor), indent=2))
+
+
+@contextlib.contextmanager
+def locked_cursor(path: Path) -> Iterator[None]:
+    """Guard a load/advance/save of the cursor.
+
+    The cursor is the same kind of state as the ledger and loses the same way:
+    two callers covering different sections each write back their own view, and
+    one section's coverage disappears.
+    """
+    with locked(path):
+        yield

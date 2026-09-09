@@ -6,17 +6,17 @@ revised later without losing its review history.
 """
 
 from dataclasses import asdict, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 
-from anki_wizard.atomic import write_text_atomic
+from anki_wizard.atomic import locked, write_text_atomic
 from anki_wizard.models import Card, CardSource
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def load_ledger(path: Path) -> list[Card]:
@@ -46,6 +46,17 @@ def load_ledger(path: Path) -> list[Card]:
             raise ValueError(
                 f"{path}: entry {position} is not a readable card ({exc})"
             ) from exc
+
+    seen: dict[str, int] = {}
+    for position, card in enumerate(cards):
+        if card.id in seen:
+            # review_cards keeps the last match and revise_card takes the
+            # first, so a repeat sends their edits to different cards.
+            raise ValueError(
+                f"{path}: entries {seen[card.id]} and {position} share the id "
+                f"{card.id!r}; ids must be unique"
+            )
+        seen[card.id] = position
     return cards
 
 
@@ -72,6 +83,13 @@ def append_cards(path: Path, proposals: list[dict], source: CardSource) -> list[
     Each proposal is a dict with `front`, `back`, and optional `why`,
     `lecture`, and `tags`.
     """
+    with locked(path):
+        return _append_locked(path, proposals, source)
+
+
+def _append_locked(
+    path: Path, proposals: list[dict], source: CardSource
+) -> list[Card]:
     cards = load_ledger(path)
     added: list[Card] = []
     for proposal in proposals:

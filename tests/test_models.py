@@ -1,4 +1,4 @@
-from anki_wizard.models import Card, CardSource, Section, Outline, Cursor
+from anki_wizard.models import Card, CardSource, Cursor, Outline, Section
 
 
 def test_card_source_from_document():

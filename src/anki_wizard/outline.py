@@ -62,7 +62,7 @@ def _embedded_sections(pdf: Path, total: int) -> list[Section] | None:
     reader = PdfReader(str(pdf))
     try:
         raw = reader.outline
-    except Exception:
+    except Exception:  # noqa: BLE001 - pypdf raises anything on a malformed outline
         return None
     if not raw:
         return None
@@ -76,7 +76,7 @@ def _embedded_sections(pdf: Path, total: int) -> list[Section] | None:
                 continue
             try:
                 page = reader.get_destination_page_number(item) + 1
-            except Exception:
+            except Exception:  # noqa: BLE001 - as above; skip the unresolvable entry
                 continue
             found.append((str(item.title), page))
 

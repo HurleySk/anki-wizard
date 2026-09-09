@@ -101,7 +101,9 @@ def main() -> int:
 
     migrated = 0
     failed: list[tuple[int, str]] = []
-    for note_id, record in zip(note_ids, records):
+    # A short response would silently leave the trailing notes unmigrated
+    # while the script reported success.
+    for note_id, record in zip(note_ids, records, strict=True):
         if not record:
             failed.append((note_id, "note no longer exists"))
             continue

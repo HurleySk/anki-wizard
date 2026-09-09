@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from anki_wizard.paths import Paths

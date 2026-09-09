@@ -1,10 +1,9 @@
-import json
-
 import pytest
 
 from anki_wizard.cursor import (
     advance,
     load_cursor,
+    locked_cursor,
     next_section,
     save_cursor,
 )
@@ -93,3 +92,30 @@ def test_cursor_file_that_is_not_json_names_the_file(tmp_path):
     path.write_text("not json at all")
     with pytest.raises(ValueError, match="not a readable cursor file"):
         load_cursor(path)
+
+
+def test_concurrent_covers_do_not_lose_each_other(tmp_path):
+    """The cursor loses updates the same way the ledger does.
+
+    Two callers covering different sections each load the same cursor and write
+    back their own view, so without a lock one section's coverage vanishes.
+    """
+    import threading
+
+    path = tmp_path / "cursor.json"
+    outline = outline_of("1.1", "1.2")
+    save_cursor(path, Cursor())
+    start = threading.Barrier(2)
+
+    def cover(section_id: str) -> None:
+        start.wait()
+        with locked_cursor(path):
+            save_cursor(path, advance(outline, load_cursor(path), section_id))
+
+    workers = [threading.Thread(target=cover, args=(s,)) for s in ("1.1", "1.2")]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(5)
+
+    assert sorted(load_cursor(path).covered) == ["1.1", "1.2"]

@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "reportlab>=4.0"]
+dev = ["pytest>=8.0", "reportlab>=4.0", "ruff>=0.6"]
 
 [build-system]
 requires = ["hatchling"]
@@ -25,3 +25,15 @@ packages = ["src/anki_wizard"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+# Beyond the defaults: bugbear and blind-except catch real mistakes, and the
+# rest keep tests and scripts honest about what they import and compare.
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "BLE", "RUF"]
+
+# Rewrites of already-readable code. A lint that always fails is a lint
+# everyone learns to skip, which costs more than the churn would buy.
+ignore = ["E501", "RUF005", "C408", "SIM102"]

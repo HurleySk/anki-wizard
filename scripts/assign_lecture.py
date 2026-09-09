@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from anki_wizard.anki import AnkiClient, AnkiError, AnkiNotRunning
+from anki_wizard.atomic import locked
 from anki_wizard.config import load_config
 from anki_wizard.ledger import load_ledger, save_ledger
 from anki_wizard.paths import Paths
@@ -73,29 +74,33 @@ def main(argv: list[str]) -> int:
 
     moved = 0
     failures: list[str] = []
+    failed_ids: set[str] = set()
     for card in to_move:
         try:
             card_ids = client.cards_of_note(card.anki_note_id)
             if not card_ids:
                 failures.append(f"{card.id}: note {card.anki_note_id} is gone from Anki")
+                failed_ids.add(card.id)
                 continue
             client.change_deck(card_ids, target)
             moved += 1
         except AnkiError as exc:
             failures.append(f"{card.id}: {exc}")
+            failed_ids.add(card.id)
 
     # The ledger is written after the moves so a card is never labelled with a
-    # lecture its note did not actually reach.
+    # lecture its note did not actually reach. It is re-read under the lock
+    # because the Anki round-trips above take long enough for a session working
+    # the same slug to have written in the meantime.
     labelled = 0
-    by_id = {c.id: i for i, c in enumerate(cards)}
-    failed_ids = {f.split(":")[0] for f in failures}
-    for card in to_label:
-        if card.id in failed_ids:
-            continue
-        index = by_id[card.id]
-        cards[index].lecture = lecture
-        labelled += 1
-    save_ledger(ledger_path, cards)
+    relabel = {c.id for c in to_label} - failed_ids
+    with locked(ledger_path):
+        cards = load_ledger(ledger_path)
+        for index, card in enumerate(cards):
+            if card.id in relabel and card.lecture != lecture:
+                cards[index].lecture = lecture
+                labelled += 1
+        save_ledger(ledger_path, cards)
 
     print(f"\nmoved in Anki:      {moved}")
     print(f"labelled in ledger: {labelled}")

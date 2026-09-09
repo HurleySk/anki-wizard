@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from anki_wizard.models import Outline, Section

@@ -9,8 +9,14 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from anki_wizard.anki import AnkiClient
-from anki_wizard.atomic import write_text_atomic
-from anki_wizard.cursor import advance, load_cursor, next_section, save_cursor
+from anki_wizard.atomic import locked, write_text_atomic
+from anki_wizard.cursor import (
+    advance,
+    load_cursor,
+    locked_cursor,
+    next_section,
+    save_cursor,
+)
 from anki_wizard.ledger import (
     _now,
     append_cards,
@@ -25,6 +31,15 @@ from anki_wizard.paths import Paths
 from anki_wizard.pdf import extract_text, render_pages
 from anki_wizard.render import render_html
 from anki_wizard.viewer import open_page
+
+
+class PushInterrupted(RuntimeError):
+    """A push failed partway, after Anki had already created some notes.
+
+    Those ids are recorded before this is raised, so a retry sends only what
+    never landed. Distinct from LedgerNotSaved, where the ids could not be
+    written down at all.
+    """
 
 
 class LedgerNotSaved(RuntimeError):
@@ -197,6 +212,13 @@ def review_cards(slug: str, decisions: dict, paths: Paths) -> dict:
     transition in one call.
     """
     ledger_path = paths.ledger_file(slug)
+    with locked(ledger_path):
+        return _review_locked(slug, decisions, ledger_path, paths)
+
+
+def _review_locked(
+    slug: str, decisions: dict[str, object], ledger_path: Path, paths: Paths
+) -> dict:
     cards = load_ledger(ledger_path)
     by_id = {c.id: i for i, c in enumerate(cards)}
 
@@ -266,10 +288,11 @@ def skip_section(slug: str, section_id: str, reason: str, paths: Paths) -> dict:
             )
 
     cursor_path = paths.cursor_file(slug)
-    cursor = load_cursor(cursor_path)
-    cursor = advance(outline, cursor, section_id)
-    cursor.skipped[section_id] = reason.strip()
-    save_cursor(cursor_path, cursor)
+    with locked_cursor(cursor_path):
+        cursor = load_cursor(cursor_path)
+        cursor = advance(outline, cursor, section_id)
+        cursor.skipped[section_id] = reason.strip()
+        save_cursor(cursor_path, cursor)
 
     return {
         "slug": slug,
@@ -364,15 +387,16 @@ def _cover_settled_sections(slug: str, cards: list, paths: Paths) -> list[str]:
 
     outline = load_outline(outline_path)
     cursor_path = paths.cursor_file(slug)
-    cursor = load_cursor(cursor_path)
-    newly: list[str] = []
-    for section_id in sorted(settled):
-        if section_id in cursor.covered or outline.section(section_id) is None:
-            continue
-        cursor = advance(outline, cursor, section_id)
-        newly.append(section_id)
-    if newly:
-        save_cursor(cursor_path, cursor)
+    with locked_cursor(cursor_path):
+        cursor = load_cursor(cursor_path)
+        newly: list[str] = []
+        for section_id in sorted(settled):
+            if section_id in cursor.covered or outline.section(section_id) is None:
+                continue
+            cursor = advance(outline, cursor, section_id)
+            newly.append(section_id)
+        if newly:
+            save_cursor(cursor_path, cursor)
     return newly
 
 
@@ -386,6 +410,25 @@ def deck_for(deck: str, lecture: str | None) -> str:
     """
     lecture = (lecture or "").strip()
     return f"{deck}::{lecture}" if lecture else deck
+
+
+def _record_push(
+    cards: list[Card], paired: list[tuple[tuple[int, Card], int | None]]
+) -> tuple[int, int]:
+    """Mark each paired card by its result, in place. Returns the tallies."""
+    pushed = 0
+    failed = 0
+    for (index, card), note_id in paired:
+        if note_id is None:
+            failed += 1
+            cards[index] = replace(
+                card,
+                history=card.history + [{"at": _now(), "action": "push-failed"}],
+            )
+            continue
+        pushed += 1
+        cards[index] = transition(card, "pushed", anki_note_id=note_id)
+    return pushed, failed
 
 
 def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict:
@@ -405,6 +448,13 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
     client.version()
 
     ledger_path = paths.ledger_file(slug)
+    with locked(ledger_path):
+        return _push_locked(slug, client, deck, ledger_path, paths)
+
+
+def _push_locked(
+    slug: str, client: AnkiClient, deck: str, ledger_path: Path, paths: Paths
+) -> dict:
     cards = load_ledger(ledger_path)
     pending = [(i, c) for i, c in enumerate(cards) if c.state == "approved"]
     if not pending:
@@ -415,33 +465,48 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
         batches.setdefault(deck_for(deck, card.lecture), []).append((index, card))
 
     paired: list[tuple[tuple[int, Card], int | None]] = []
-    for target_deck, batch in batches.items():
-        client.ensure_deck(target_deck)
-        note_ids = client.add_notes(
-            target_deck,
-            [
-                {"front": c.front, "back": c.back, "why": c.why, "tags": c.tags}
-                for _, c in batch
-            ],
-        )
-        paired.extend(zip(batch, note_ids))
-
-    pushed_sections: set[str] = set()
-    pushed = 0
-    failed = 0
-    for (index, card), note_id in paired:
-        if note_id is None:
-            failed += 1
-            cards[index] = replace(
-                card,
-                history=card.history + [{"at": _now(), "action": "push-failed"}],
+    try:
+        for target_deck, batch in batches.items():
+            client.ensure_deck(target_deck)
+            note_ids = client.add_notes(
+                target_deck,
+                [
+                    {"front": c.front, "back": c.back, "why": c.why, "tags": c.tags}
+                    for _, c in batch
+                ],
             )
-            continue
-        pushed += 1
-        cards[index] = transition(card, "pushed", anki_note_id=note_id)
-        # Conversation cards have no section and so cover nothing.
-        if card.source.section:
-            pushed_sections.add(card.source.section)
+            # add_notes guarantees one id per note; strict makes a broken
+            # contract loud instead of silently dropping the trailing cards.
+            paired.extend(zip(batch, note_ids, strict=True))
+    except Exception as exc:
+        # Anki has already created the earlier batches' notes. Leaving those
+        # cards approved would duplicate them on the next push, and a duplicate
+        # is unpushable forever -- so record the ids before the error escapes.
+        landed = [p for p in paired if p[1] is not None]
+        if not landed:
+            raise
+        _record_push(cards, paired)
+        created = {card.id: note_id for (_, card), note_id in landed}
+        try:
+            save_ledger(ledger_path, cards)
+        except Exception as save_exc:
+            raise LedgerNotSaved(
+                f"{len(created)} notes were created in Anki before the push "
+                f"failed ({exc}), and the ledger at {ledger_path} could not be "
+                f"written either ({save_exc}). Re-pushing will duplicate them. "
+                f"Record these ids before retrying: {created}"
+            ) from save_exc
+        # A section whose cards all landed is settled even though the push as a
+        # whole did not, and leaving it uncovered strands the cursor on work
+        # that is finished.
+        _cover_settled_sections(slug, cards, paths)
+        raise PushInterrupted(
+            f"the push failed partway ({exc}). {len(created)} notes were "
+            f"created in Anki and have been recorded: {created}. Re-push to "
+            "send the rest."
+        ) from exc
+
+    pushed, failed = _record_push(cards, paired)
 
     try:
         save_ledger(ledger_path, cards)
@@ -503,6 +568,26 @@ def revise_card(
     preserves scheduling, so a misfiled card can be corrected without cost.
     """
     ledger_path = paths.ledger_file(slug)
+    with locked(ledger_path):
+        return _revise_locked(
+            slug, card_id, client, paths, ledger_path,
+            front, back, why, tags, lecture, deck,
+        )
+
+
+def _revise_locked(
+    slug: str,
+    card_id: str,
+    client: AnkiClient,
+    paths: Paths,
+    ledger_path: Path,
+    front: str | None,
+    back: str | None,
+    why: str | None,
+    tags: list[str] | None,
+    lecture: str | None,
+    deck: str | None,
+) -> dict:
     cards = load_ledger(ledger_path)
     index = next((i for i, c in enumerate(cards) if c.id == card_id), None)
     if index is None:

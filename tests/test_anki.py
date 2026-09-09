@@ -170,9 +170,8 @@ def test_add_notes_rejects_a_length_mismatch():
 
 def test_unstubbed_action_is_an_error_not_a_silent_none():
     """Guards the fake itself: a forgotten stub must fail the test, not pass."""
-    with FakeAnki() as fake:
-        with pytest.raises(AnkiError, match="unsupported action"):
-            AnkiClient(fake.url).version()
+    with FakeAnki() as fake, pytest.raises(AnkiError, match="unsupported action"):
+        AnkiClient(fake.url).version()
 
 
 def _sent(fake, action: str) -> dict:

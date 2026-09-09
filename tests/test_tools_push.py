@@ -33,7 +33,7 @@ def approved(paths, count=1, section="1"):
         paths=paths,
     )
     ids = [f"c-{n:04d}" for n in range(1, count + 1)]
-    review_cards("slides", {cid: "approve" for cid in ids}, paths=paths)
+    review_cards("slides", dict.fromkeys(ids, "approve"), paths=paths)
     return ids
 
 

@@ -13,6 +13,7 @@ from anki_wizard.anki import AnkiClient
 from anki_wizard.ledger import load_ledger
 from anki_wizard.paths import Paths
 from anki_wizard.tools import (
+    PushInterrupted,
     ingest_source,
     propose_cards,
     push_to_anki,
@@ -242,3 +243,32 @@ def test_revising_content_without_a_lecture_moves_nothing(workspace):
     assert "changeDeck" not in [r["action"] for r in fake.requests]
     card = load_ledger(workspace.ledger_file("slides"))[0]
     assert (card.front, card.lecture) == ("edited", "L01 A")
+
+
+def test_a_failure_between_decks_still_records_what_landed(workspace):
+    """The ids of notes Anki already created must never be discarded.
+
+    push_to_anki calls addNotes once per deck. If a later call fails, the
+    earlier deck's notes exist in Anki: leaving those cards approved means the
+    next push duplicates them, and a duplicate is unpushable forever.
+    """
+    approve(
+        workspace,
+        [
+            {"front": "F1", "back": "B", "lecture": "L01 A"},
+            {"front": "F2", "back": "B", "lecture": "L02 B"},
+        ],
+    )
+    with FakeAnki() as fake:
+        fake.set_response("version", 6)
+        fake.set_response("createDeck", 1)
+        # One id for the first deck, then the sequence runs out and the second
+        # addNotes fails -- a dropped connection mid-push.
+        fake.set_sequence("addNotes", [[1001]])
+        with pytest.raises(PushInterrupted) as excinfo:
+            push_to_anki("slides", AnkiClient(fake.url), deck="Stats", paths=workspace)
+
+    assert "1001" in str(excinfo.value)
+    cards = {c.front: c for c in load_ledger(workspace.ledger_file("slides"))}
+    assert (cards["F1"].state, cards["F1"].anki_note_id) == ("pushed", 1001)
+    assert cards["F2"].state == "approved"

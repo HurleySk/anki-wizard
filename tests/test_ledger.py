@@ -1,4 +1,5 @@
 import pytest
+import yaml
 
 from anki_wizard.ledger import append_cards, load_ledger, next_card_id, save_ledger
 from anki_wizard.models import Card, CardSource
@@ -184,3 +185,24 @@ def test_a_proposal_without_a_why_stays_none(tmp_path):
     p = tmp_path / "cards.yaml"
     (card,) = append_cards(p, [{"front": "f", "back": "b"}], CardSource(slug="s"))
     assert card.why is None
+
+
+def test_duplicate_ids_are_refused(tmp_path):
+    """An id names one card, or the tools disagree about which one it names.
+
+    review_cards indexes by id and keeps the last match; revise_card scans and
+    takes the first. A ledger with a repeated id silently sends edits to one
+    card and approvals to another.
+    """
+    path = tmp_path / "cards.yaml"
+    source = {"slug": "doc", "section": "1.1", "pages": [3]}
+    path.write_text(
+        yaml.safe_dump(
+            [
+                {"id": "c-0001", "front": "FIRST", "back": "B", "source": source},
+                {"id": "c-0001", "front": "SECOND", "back": "B", "source": source},
+            ]
+        )
+    )
+    with pytest.raises(ValueError, match="c-0001"):
+        load_ledger(path)
