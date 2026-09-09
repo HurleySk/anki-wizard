@@ -10,6 +10,7 @@ The page uses the same MathJax delimiters as the cards -- \\(...\\) and \\[...\\
 
 import base64
 import io
+import re
 from html import escape
 
 MATHJAX_CDN = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
@@ -97,6 +98,7 @@ def _render_block(block: dict) -> str:
     if kind == "prose":
         # Escaped because prose is text: a stray "<" must not open a tag. Math
         # delimiters are backslash sequences, which escaping leaves alone.
+        _reject_markup(block["text"])
         return f"<p>{escape(block['text'])}</p>"
     if kind == "math":
         return f"<p>\\[{block['tex']}\\]</p>"
@@ -108,6 +110,31 @@ def _render_block(block: dict) -> str:
     if kind == "figure":
         return _render_figure(block)
     raise ValueError(f"unknown block type: {kind!r}")
+
+
+# A tag with a known inline name, or a named/numeric entity. Deliberately not
+# a general "<...>" match: prose about a comparison is exactly what escaping is
+# for, and "a < b" must keep rendering rather than trip this.
+_MARKUP = re.compile(
+    r"</?(?:b|i|u|em|strong|br|p|div|span|h[1-6]|hr|a|ul|ol|li)\b[^>]*>"
+    r"|&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#\d{1,7}|#[xX][0-9a-fA-F]{1,6});"
+)
+
+
+def _reject_markup(text: str) -> None:
+    """Fail on markup in prose, which escaping would render as visible source.
+
+    The failure is otherwise silent -- the page loads and simply reads wrong --
+    and it means the author wanted a block that does not exist yet or a
+    different one that does, so it is worth stopping for rather than escaping.
+    """
+    found = _MARKUP.search(text)
+    if found:
+        raise ValueError(
+            f"prose is plain text, so {found.group()!r} would render as itself. "
+            "Use a math block for displayed formulas, a steps block's why for an "
+            "aside, or type the character directly instead of an entity."
+        )
 
 
 def _render_step(number: int, step: dict) -> str:

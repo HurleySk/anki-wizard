@@ -132,6 +132,30 @@ The URL is stable across renders and outlives the process that produced it, so
 re-rendering does not invalidate a link already given. The server stops itself
 once the pad goes unread; `scripts/stop_pad.py` stops one early.
 
+**Hand over the link and stop.** The explanation belongs on the pad, not in the
+terminal beside it. Restating the content in chat wastes the reader's attention
+on the unreadable copy and answers the question twice; if something is worth
+saying, it is worth saying on the pad where it renders. A sentence naming what
+the pad holds is enough.
+
+## Writing pad blocks
+
+Prose is **plain text, not HTML**. `render.py` escapes it, so `<b>bold</b>`
+renders as literal `<b>bold</b>` and `&mdash;` as literal `&mdash;`. This is
+deliberate -- a stray `<` in mathematical prose must not open a tag -- so reach
+for the right block instead of marking prose up:
+
+- emphasis: rewrite the sentence, or let a `steps` block's `why` carry the aside
+- displayed math: a `math` block, never `\[...\]` hand-rolled into prose
+- structure: separate blocks, or a `figure`; there is no heading block, so a
+  short prose line naming the section is how a section gets named
+- punctuation: type the character itself (-- and " and ...), never an entity
+
+Inline `\(...\)` inside prose does survive escaping, since the delimiters are
+backslashes. But keep it to a bare symbol or a short expression: entities and
+escaped tags landing inside a math span are what silently break MathJax, and a
+formula that fails to typeset disappears from the page rather than erroring.
+
 Prefer a `steps` block over prose for a derivation, and use each step's `why` to
 name the justification. A derivation whose steps are unjustified teaches the
 manipulation without the reason, which is the failure mode the pad exists to fix.

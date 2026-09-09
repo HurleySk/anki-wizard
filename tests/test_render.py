@@ -145,3 +145,22 @@ def test_figure_without_a_caption_omits_the_element():
     # is A-Za-z0-9+/=, which cannot contain "<", so this can't false-positive.
     html = render_html([{"type": "figure", "figure": _a_figure()}])
     assert "<figcaption>" not in html
+
+
+def test_markup_in_prose_is_refused():
+    """Prose is plain text, so markup in it is a mistake worth failing on.
+
+    Escaping renders `<b>x</b>` as visible tag text and an entity as its own
+    source. Both are silent: the page loads and simply reads wrong. An author
+    reaching for markup wanted a different block, so say so at render time.
+    """
+    with pytest.raises(ValueError, match="plain text"):
+        render_html([{"type": "prose", "text": "the <b>mean</b> of X"}])
+    with pytest.raises(ValueError, match="plain text"):
+        render_html([{"type": "prose", "text": "seven letters &mdash; three As"}])
+
+
+def test_comparisons_in_prose_are_not_mistaken_for_markup():
+    """The guard must not break the case escaping exists for."""
+    html = render_html([{"type": "prose", "text": "if a < b and c > d"}])
+    assert "a &lt; b" in html
