@@ -11,10 +11,17 @@ It cannot notice an action that Anki drops in a later release -- only a live
 call could -- but it does catch the failure this suite is otherwise blind to:
 a name that never existed. Refresh it with the command in the docstring below
 when a new AnkiConnect action is genuinely needed.
+
+This file also carries ordinary FakeAnki-backed tests for client methods, so
+that the static name check above and the behavioral tests for the same client
+live in one place rather than splitting `anki.py` coverage across files.
 """
 
 import re
 from pathlib import Path
+
+from anki_wizard.anki import AnkiClient
+from tests.fake_anki import FakeAnki
 
 # uv run python -c "import json,urllib.request as u; \
 #   print(sorted(json.load(u.urlopen(u.Request('http://localhost:8765', \
@@ -83,3 +90,28 @@ def test_the_scan_finds_every_invoke_call():
     check above vacuous, and it passes while finding zero actions."""
     source = (Path(__file__).parent.parent / "src/anki_wizard/anki.py").read_text()
     assert len(_INVOKE.findall(source)) == source.count("._invoke(")
+
+
+def test_deck_names_returns_the_tree():
+    with FakeAnki() as fake:
+        fake.set_response("deckNames", ["Default", "Stats", "Stats::Unit I"])
+        client = AnkiClient(fake.url)
+        assert client.deck_names() == ["Default", "Stats", "Stats::Unit I"]
+
+
+def test_retrieve_media_file_decodes_base64():
+    """AnkiConnect returns media base64-encoded; callers want the bytes."""
+    import base64
+
+    with FakeAnki() as fake:
+        fake.set_response("retrieveMediaFile", base64.b64encode(b"PNGDATA").decode())
+        client = AnkiClient(fake.url)
+        assert client.retrieve_media_file("figure.png") == b"PNGDATA"
+
+
+def test_retrieve_media_file_returns_none_when_absent():
+    """A missing file comes back as False, not an error, so it must be checked."""
+    with FakeAnki() as fake:
+        fake.set_response("retrieveMediaFile", False)
+        client = AnkiClient(fake.url)
+        assert client.retrieve_media_file("gone.png") is None

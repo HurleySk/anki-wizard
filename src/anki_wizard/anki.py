@@ -6,6 +6,7 @@ Anki is closed -- a routine condition, not a crash, and it gets its own
 exception type. Protocol errors arrive in the JSON body with HTTP 200.
 """
 
+import base64
 from typing import Any
 
 import requests
@@ -172,6 +173,21 @@ class AnkiClient:
     def model_names(self) -> list[str]:
         """Every note type in the collection."""
         return self._invoke("modelNames")
+
+    def deck_names(self) -> list[str]:
+        """Every deck in the collection, including subdecks as "A::B" names."""
+        return self._invoke("deckNames")
+
+    def retrieve_media_file(self, filename: str) -> bytes | None:
+        """A media file's bytes, or None if the collection has no such file.
+
+        AnkiConnect answers a missing file with False rather than an error, so
+        a caller that did not check would concatenate a bool into its page.
+        """
+        encoded = self._invoke("retrieveMediaFile", filename=filename)
+        if not encoded:
+            return None
+        return base64.b64decode(encoded)
 
     def create_model(
         self, name: str, fields: list[str], front: str, back: str, css: str
