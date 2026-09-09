@@ -1,4 +1,6 @@
 # tests/test_anki.py
+import base64
+
 import pytest
 
 from anki_wizard.anki import (
@@ -184,6 +186,51 @@ def test_model_names_returns_the_collections_note_types():
         fake.set_response("modelNames", ["Basic", "Cloze"])
         assert AnkiClient(fake.url).model_names() == ["Basic", "Cloze"]
         assert _sent(fake, "modelNames") == {}
+
+
+def test_deck_names_returns_the_tree():
+    with FakeAnki() as fake:
+        fake.set_response("deckNames", ["Default", "Stats", "Stats::Unit I"])
+        client = AnkiClient(fake.url)
+        assert client.deck_names() == ["Default", "Stats", "Stats::Unit I"]
+
+
+def test_retrieve_media_file_decodes_base64():
+    """AnkiConnect returns media base64-encoded; callers want the bytes."""
+    with FakeAnki() as fake:
+        fake.set_response("retrieveMediaFile", base64.b64encode(b"PNGDATA").decode())
+        client = AnkiClient(fake.url)
+        assert client.retrieve_media_file("figure.png") == b"PNGDATA"
+        assert _sent(fake, "retrieveMediaFile") == {"filename": "figure.png"}
+
+
+def test_retrieve_media_file_returns_none_when_absent():
+    """A missing file comes back as False, not an error, so it must be checked."""
+    with FakeAnki() as fake:
+        fake.set_response("retrieveMediaFile", False)
+        client = AnkiClient(fake.url)
+        assert client.retrieve_media_file("gone.png") is None
+
+
+def test_retrieve_media_file_returns_empty_bytes_for_an_empty_file():
+    """An existing 0-byte file decodes to '', which is falsy but not missing.
+
+    Testing truthiness rather than the False sentinel would misreport a
+    truncated download or interrupted sync as a file that was never there.
+    """
+    with FakeAnki() as fake:
+        fake.set_response("retrieveMediaFile", "")
+        client = AnkiClient(fake.url)
+        assert client.retrieve_media_file("empty.png") == b""
+
+
+def test_retrieve_media_file_raises_anki_error_on_malformed_payload():
+    """A non-base64 response must not leak a raw binascii.Error past AnkiError."""
+    with FakeAnki() as fake:
+        fake.set_response("retrieveMediaFile", "<html>error</html>")
+        client = AnkiClient(fake.url)
+        with pytest.raises(AnkiError, match="figure"):
+            client.retrieve_media_file("figure.png")
 
 
 def test_create_model_sends_fields_templates_and_css():

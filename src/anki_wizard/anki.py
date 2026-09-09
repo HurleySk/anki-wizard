@@ -7,6 +7,7 @@ exception type. Protocol errors arrive in the JSON body with HTTP 200.
 """
 
 import base64
+import binascii
 from typing import Any
 
 import requests
@@ -183,11 +184,21 @@ class AnkiClient:
 
         AnkiConnect answers a missing file with False rather than an error, so
         a caller that did not check would concatenate a bool into its page.
+        The check is against that exact sentinel, not truthiness: an existing
+        0-byte file decodes to the empty string, which is falsy but real, and
+        calling it "missing" misdiagnoses a truncated download or interrupted
+        sync as a file that was never there.
         """
         encoded = self._invoke("retrieveMediaFile", filename=filename)
-        if not encoded:
+        if encoded is False:
             return None
-        return base64.b64decode(encoded)
+        try:
+            return base64.b64decode(encoded, validate=True)
+        except (binascii.Error, TypeError) as exc:
+            raise AnkiError(
+                f"retrieveMediaFile: {filename!r} at {self.url} did not decode as "
+                f"base64: {exc}. Response began: {str(encoded)[:_BODY_EXCERPT]!r}"
+            ) from exc
 
     def create_model(
         self, name: str, fields: list[str], front: str, back: str, css: str
