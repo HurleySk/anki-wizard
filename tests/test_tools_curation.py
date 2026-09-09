@@ -102,6 +102,18 @@ def test_review_edits_content_without_changing_state(workspace):
     assert card.state == "proposed"
 
 
+def test_review_edit_can_set_the_why(workspace):
+    """The edit dict takes the same fields as revise; why must not be dropped."""
+    propose_cards(
+        "slides", [{"front": "F", "back": "B"}], section_id="1", paths=workspace
+    )
+    review_cards(
+        "slides", {"c-0001": {"edit": {"why": "because"}}}, paths=workspace
+    )
+    (card,) = load_ledger(workspace.ledger_file("slides"))
+    assert card.why == "because"
+
+
 def test_review_edit_then_approve_in_one_call(workspace):
     propose_cards(
         "slides", [{"front": "F", "back": "B"}], section_id="1", paths=workspace

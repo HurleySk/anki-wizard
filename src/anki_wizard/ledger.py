@@ -19,6 +19,17 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def record(card: Card, action: str, **changes) -> Card:
+    """Return a copy of `card` with `changes` applied and `action` in its history.
+
+    Every change to a card goes through here so the history stays an audit
+    trail: nothing changes a field without saying what happened and when.
+    """
+    return replace(
+        card, history=card.history + [{"at": _now(), "action": action}], **changes
+    )
+
+
 def load_ledger(path: Path) -> list[Card]:
     if not path.exists():
         return []
@@ -84,29 +95,22 @@ def append_cards(path: Path, proposals: list[dict], source: CardSource) -> list[
     `lecture`, and `tags`.
     """
     with locked(path):
-        return _append_locked(path, proposals, source)
-
-
-def _append_locked(
-    path: Path, proposals: list[dict], source: CardSource
-) -> list[Card]:
-    cards = load_ledger(path)
-    added: list[Card] = []
-    for proposal in proposals:
-        card = Card(
-            id=next_card_id(cards + added),
-            front=proposal["front"],
-            back=proposal["back"],
-            source=CardSource(
-                slug=source.slug, section=source.section, pages=list(source.pages)
-            ),
-            why=proposal.get("why"),
-            lecture=proposal.get("lecture"),
-            tags=list(proposal.get("tags", [])),
-            history=[{"at": _now(), "action": "proposed"}],
-        )
-        added.append(card)
-    save_ledger(path, cards + added)
+        cards = load_ledger(path)
+        added: list[Card] = []
+        for proposal in proposals:
+            card = Card(
+                id=next_card_id(cards + added),
+                front=proposal["front"],
+                back=proposal["back"],
+                source=CardSource(
+                    slug=source.slug, section=source.section, pages=list(source.pages)
+                ),
+                why=proposal.get("why"),
+                lecture=proposal.get("lecture"),
+                tags=list(proposal.get("tags", [])),
+            )
+            added.append(record(card, "proposed"))
+        save_ledger(path, cards + added)
     return added
 
 
@@ -127,14 +131,10 @@ def transition(card: Card, target: str, anki_note_id: int | None = None) -> Card
     """
     if target not in LEGAL_TRANSITIONS.get(card.state, set()):
         raise ValueError(f"illegal transition: {card.state} -> {target}")
-    updated = replace(
-        card,
-        state=target,
-        history=card.history + [{"at": _now(), "action": target}],
-    )
+    changes: dict[str, object] = {"state": target}
     if anki_note_id is not None:
-        updated.anki_note_id = anki_note_id
-    return updated
+        changes["anki_note_id"] = anki_note_id
+    return record(card, target, **changes)
 
 
 def edit_card(
@@ -170,11 +170,6 @@ def edit_card(
     )
     if not changed:
         return card
-    return replace(
-        card,
-        front=new_front,
-        back=new_back,
-        why=new_why,
-        tags=new_tags,
-        history=card.history + [{"at": _now(), "action": "edited"}],
+    return record(
+        card, "edited", front=new_front, back=new_back, why=new_why, tags=new_tags
     )

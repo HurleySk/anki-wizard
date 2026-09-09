@@ -245,6 +245,29 @@ def test_revising_content_without_a_lecture_moves_nothing(workspace):
     assert (card.front, card.lecture) == ("edited", "L01 A")
 
 
+def test_a_refile_that_cannot_proceed_touches_neither_anki_nor_the_ledger(workspace):
+    """Refusing the move must come before any write, or an edit sent in the same
+    call reaches Anki while the ledger never learns of it."""
+    approve(workspace, [{"front": "F", "back": "B", "lecture": "L01 A"}])
+    with FakeAnki() as fake:
+        fake.set_response("version", 6)
+        fake.set_response("createDeck", 1)
+        fake.set_response("addNotes", [1001])
+        push_to_anki("slides", AnkiClient(fake.url), deck="Stats", paths=workspace)
+
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [{"noteId": 1001, "cards": [55], "fields": {}}])
+        fake.set_response("updateNoteFields", None)
+        with pytest.raises(ValueError, match="base deck"):
+            revise_card(
+                "slides", "c-0001", AnkiClient(fake.url), paths=workspace,
+                front="edited", lecture="L02 B",
+            )
+    assert "updateNoteFields" not in [r["action"] for r in fake.requests]
+    card = load_ledger(workspace.ledger_file("slides"))[0]
+    assert (card.front, card.lecture) == ("F", "L01 A")
+
+
 def test_a_failure_between_decks_still_records_what_landed(workspace):
     """The ids of notes Anki already created must never be discarded.
 

@@ -73,6 +73,13 @@ class Outline:
                 return s
         return None
 
+    def page_numbers(self, section: Section) -> list[int]:
+        """The pages a section spans, clamped to the document.
+
+        Outlines are hand-editable, so a section can claim pages past the end.
+        """
+        return list(range(section.start, min(section.end, self.pages + 1)))
+
 
 @dataclass
 class Cursor:
