@@ -61,8 +61,8 @@ def load_ledger(path: Path) -> list[Card]:
     seen: dict[str, int] = {}
     for position, card in enumerate(cards):
         if card.id in seen:
-            # review_cards keeps the last match and revise_card takes the
-            # first, so a repeat sends their edits to different cards.
+            # Lookup takes the first match, so a repeat makes the second copy
+            # unreachable: edits and pushes would silently land on the first.
             raise ValueError(
                 f"{path}: entries {seen[card.id]} and {position} share the id "
                 f"{card.id!r}; ids must be unique"
@@ -76,6 +76,19 @@ def save_ledger(path: Path, cards: list[Card]) -> None:
         path,
         yaml.safe_dump([asdict(c) for c in cards], sort_keys=False, allow_unicode=True),
     )
+
+
+def index_of(cards: list[Card], card_id: str, slug: str) -> int:
+    """The position of `card_id` in the ledger, or ValueError naming the slug.
+
+    load_ledger rejects duplicate ids, so the first match is the only match.
+    Callers hold the list rather than the path -- they are already inside the
+    lock, and re-reading would defeat it.
+    """
+    for index, card in enumerate(cards):
+        if card.id == card_id:
+            return index
+    raise ValueError(f"no card {card_id!r} in ledger for {slug!r}")
 
 
 def next_card_id(cards: list[Card]) -> str:

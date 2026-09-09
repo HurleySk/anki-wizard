@@ -4,7 +4,7 @@ A missing or empty config.yaml is not an error: every field has a default that
 works against a stock Anki install.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 import yaml
@@ -24,14 +24,16 @@ def load_config(path: Path) -> Config:
     if not path.exists():
         return Config()
     raw = yaml.safe_load(path.read_text()) or {}
-    defaults = Config()
-    return Config(
-        anki_connect_url=raw.get("anki_connect_url", defaults.anki_connect_url),
-        deck=raw.get("deck", defaults.deck),
-        default_tags=raw.get("default_tags", defaults.default_tags),
-        max_pages_per_read=raw.get("max_pages_per_read", defaults.max_pages_per_read),
-        pad_viewer=raw.get("pad_viewer", defaults.pad_viewer),
-        pad_server_timeout_minutes=raw.get(
-            "pad_server_timeout_minutes", defaults.pad_server_timeout_minutes
-        ),
-    )
+
+    # Built from the dataclass rather than a hand-written mapping, so a new
+    # field needs no line here and cannot be silently dropped.
+    known = {f.name for f in fields(Config)}
+    unknown = sorted(set(raw) - known)
+    if unknown:
+        # A misspelt key that does nothing leaves the user believing they
+        # configured something, and the setting quietly keeps its default.
+        raise ValueError(
+            f"{path}: unknown setting(s) {', '.join(repr(k) for k in unknown)}. "
+            f"Known settings: {', '.join(sorted(known))}."
+        )
+    return Config(**raw)

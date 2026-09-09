@@ -48,34 +48,32 @@ def extract_text(pdf: Path, page: int) -> str:
     return _run(["pdftotext", "-f", str(page), "-l", str(page), str(pdf), "-"])
 
 
-def render_pages(pdf: Path, out_dir: Path, dpi: int = 150) -> list[Path]:
-    """Render every page to out_dir/page-NNN.png.
+def render_page(pdf: Path, page: int, target: Path, dpi: int = 150) -> Path:
+    """Render one page to `target`, which the caller names.
 
-    Pages already rendered are skipped, which is what makes ingest resumable
-    after an interrupted run.
+    Already-rendered pages are skipped, which is what makes ingest resumable
+    after an interrupted run. The target is passed in rather than derived here
+    so this module stays free of the state layout, which paths.py owns.
     """
     if not pdf.exists():
         raise FileNotFoundError(pdf)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    total = page_count(pdf)
-    written: list[Path] = []
-    for page in range(1, total + 1):
-        target = out_dir / f"page-{page:03d}.png"
-        if not target.exists():
-            _run(
-                [
-                    "pdftoppm",
-                    "-png",
-                    "-r",
-                    str(dpi),
-                    "-f",
-                    str(page),
-                    "-l",
-                    str(page),
-                    "-singlefile",
-                    str(pdf),
-                    str(target.with_suffix("")),
-                ]
-            )
-        written.append(target)
-    return written
+    if target.exists():
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _run(
+        [
+            "pdftoppm",
+            "-png",
+            "-r",
+            str(dpi),
+            "-f",
+            str(page),
+            "-l",
+            str(page),
+            "-singlefile",
+            str(pdf),
+            # pdftoppm appends the extension itself, so it wants the stem.
+            str(target.with_suffix("")),
+        ]
+    )
+    return target

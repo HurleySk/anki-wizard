@@ -10,16 +10,11 @@ from pathlib import Path
 
 from anki_wizard.anki import AnkiClient
 from anki_wizard.atomic import locked, write_text_atomic
-from anki_wizard.cursor import (
-    advance,
-    load_cursor,
-    locked_cursor,
-    next_section,
-    save_cursor,
-)
+from anki_wizard.cursor import advance, load_cursor, next_section, save_cursor
 from anki_wizard.ledger import (
     append_cards,
     edit_card,
+    index_of,
     load_ledger,
     record,
     save_ledger,
@@ -28,7 +23,7 @@ from anki_wizard.ledger import (
 from anki_wizard.models import Card, CardSource, Outline, Section
 from anki_wizard.outline import build_outline, load_outline, save_outline
 from anki_wizard.paths import Paths
-from anki_wizard.pdf import extract_text, render_pages
+from anki_wizard.pdf import extract_text, render_page
 from anki_wizard.render import render_html
 from anki_wizard.viewer import open_page
 
@@ -91,12 +86,12 @@ def ingest_source(pdf: Path, slug: str, paths: Paths, dpi: int = 150) -> dict:
     if not stored_pdf.exists():
         shutil.copy2(pdf, stored_pdf)
 
-    render_pages(stored_pdf, paths.pages_dir(slug), dpi=dpi)
-
+    # The outline comes first because it is what knows how many pages there are.
     outline = build_outline(stored_pdf, slug=slug)
     save_outline(paths.outline_file(slug), outline)
 
     for page in range(1, outline.pages + 1):
+        render_page(stored_pdf, page, paths.page_image(slug, page), dpi=dpi)
         text = extract_text(stored_pdf, page)
         if text.strip():
             paths.page_text(slug, page).write_text(text)
@@ -216,13 +211,10 @@ def review_cards(slug: str, decisions: dict, paths: Paths) -> dict:
     ledger_path = paths.ledger_file(slug)
     with locked(ledger_path):
         cards = load_ledger(ledger_path)
-        by_id = {c.id: i for i, c in enumerate(cards)}
 
         updated: dict[str, str] = {}
         for card_id, decision in decisions.items():
-            if card_id not in by_id:
-                raise ValueError(f"no card {card_id!r} in ledger for {slug!r}")
-            index = by_id[card_id]
+            index = index_of(cards, card_id, slug)
             card = cards[index]
 
             if isinstance(decision, dict):
@@ -282,8 +274,10 @@ def skip_section(slug: str, section_id: str, reason: str, paths: Paths) -> dict:
                 f"section {section_id!r} has cards; reject them before skipping"
             )
 
+    # The cursor needs the same guard as the ledger: two callers covering
+    # different sections would each write back their own view, losing one.
     cursor_path = paths.cursor_file(slug)
-    with locked_cursor(cursor_path):
+    with locked(cursor_path):
         cursor = load_cursor(cursor_path)
         cursor = advance(outline, cursor, section_id)
         cursor.skipped[section_id] = reason.strip()
@@ -382,7 +376,7 @@ def _cover_settled_sections(slug: str, cards: list, paths: Paths) -> list[str]:
 
     outline = load_outline(outline_path)
     cursor_path = paths.cursor_file(slug)
-    with locked_cursor(cursor_path):
+    with locked(cursor_path):
         cursor = load_cursor(cursor_path)
         newly: list[str] = []
         for section_id in sorted(settled):
@@ -420,6 +414,34 @@ def _record_push(
         pushed += 1
         cards[index] = transition(card, "pushed", anki_note_id=note_id)
     return pushed, failed
+
+
+def _created_ids(
+    paired: list[tuple[tuple[int, Card], int | None]],
+) -> dict[str, int]:
+    """The note ids Anki actually handed back, by card id."""
+    return {card.id: note_id for (_, card), note_id in paired if note_id is not None}
+
+
+def _save_or_raise(
+    ledger_path: Path, cards: list[Card], created: dict[str, int], context: str
+) -> None:
+    """Save the ledger, or fail loudly with the created note ids in the message.
+
+    The notes are already in Anki. If their ids never reach the ledger the
+    cards stay approved and the next push duplicates them, so the ids have to
+    escape in the error -- this is the one inconsistency the harness cannot
+    repair itself. The catch is deliberately broad: what matters is that the
+    ledger did not get written, not why.
+    """
+    try:
+        save_ledger(ledger_path, cards)
+    except Exception as exc:
+        raise LedgerNotSaved(
+            f"{len(created)} notes were created in Anki{context} and the ledger "
+            f"at {ledger_path} could not be written ({exc}). Re-pushing will "
+            f"duplicate them. Record these ids before retrying: {created}"
+        ) from exc
 
 
 def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict:
@@ -467,20 +489,13 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
             # Anki has already created the earlier batches' notes. Leaving those
             # cards approved would duplicate them on the next push, and a duplicate
             # is unpushable forever -- so record the ids before the error escapes.
-            landed = [p for p in paired if p[1] is not None]
-            if not landed:
+            created = _created_ids(paired)
+            if not created:
                 raise
             _record_push(cards, paired)
-            created = {card.id: note_id for (_, card), note_id in landed}
-            try:
-                save_ledger(ledger_path, cards)
-            except Exception as save_exc:
-                raise LedgerNotSaved(
-                    f"{len(created)} notes were created in Anki before the push "
-                    f"failed ({exc}), and the ledger at {ledger_path} could not be "
-                    f"written either ({save_exc}). Re-pushing will duplicate them. "
-                    f"Record these ids before retrying: {created}"
-                ) from save_exc
+            _save_or_raise(
+                ledger_path, cards, created, f" before the push failed ({exc})"
+            )
             # A section whose cards all landed is settled even though the push as a
             # whole did not, and leaving it uncovered strands the cursor on work
             # that is finished.
@@ -493,25 +508,7 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
 
         pushed, failed = _record_push(cards, paired)
 
-        try:
-            save_ledger(ledger_path, cards)
-        except Exception as exc:
-            # The notes are already in Anki. If their ids are not recorded, the
-            # cards stay approved and the next push duplicates them -- so fail
-            # loudly with the ids in the message rather than letting the error
-            # surface anonymously. The catch is deliberately broad: what matters
-            # is that the ledger did not get written, not why.
-            created = {
-                card.id: note_id
-                for (_, card), note_id in paired
-                if note_id is not None
-            }
-            raise LedgerNotSaved(
-                f"{len(created)} notes were created in Anki but the ledger at "
-                f"{ledger_path} could not be written ({exc}). Re-pushing will "
-                "duplicate them. Record these ids before retrying: "
-                f"{created}"
-            ) from exc
+        _save_or_raise(ledger_path, cards, _created_ids(paired), "")
 
         # A section is covered once it has cards in Anki and nothing left awaiting
         # a push -- the same rule review_cards applies, so a section blocked by an
@@ -555,9 +552,7 @@ def revise_card(
     ledger_path = paths.ledger_file(slug)
     with locked(ledger_path):
         cards = load_ledger(ledger_path)
-        index = next((i for i, c in enumerate(cards) if c.id == card_id), None)
-        if index is None:
-            raise ValueError(f"no card {card_id!r} in ledger for {slug!r}")
+        index = index_of(cards, card_id, slug)
         card = cards[index]
 
         if card.state == "pushed":

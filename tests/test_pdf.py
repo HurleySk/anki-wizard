@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from anki_wizard.pdf import extract_text, page_count, render_pages
+from anki_wizard.pdf import extract_text, page_count, render_page
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -21,22 +21,26 @@ def test_extract_text_empty_for_scanned():
     assert extract_text(FIXTURES / "scanned.pdf", 1).strip() == ""
 
 
-def test_render_pages_writes_images(tmp_path):
-    written = render_pages(FIXTURES / "slides.pdf", tmp_path, dpi=50)
-    assert len(written) == 4
-    assert all(p.exists() and p.stat().st_size > 0 for p in written)
-    assert written[0].name == "page-001.png"
+def test_render_page_writes_an_image(tmp_path):
+    target = tmp_path / "page-001.png"
+    written = render_page(FIXTURES / "slides.pdf", 1, target, dpi=50)
+    assert written == target
+    assert target.exists() and target.stat().st_size > 0
 
 
-def test_render_pages_skips_existing(tmp_path):
-    render_pages(FIXTURES / "slides.pdf", tmp_path, dpi=50)
-    first = tmp_path / "page-001.png"
-    first.unlink()
-    written = render_pages(FIXTURES / "slides.pdf", tmp_path, dpi=50)
-    assert first.exists()
-    assert len(written) == 4
+def test_render_page_creates_missing_parents(tmp_path):
+    target = tmp_path / "pages" / "page-002.png"
+    render_page(FIXTURES / "slides.pdf", 2, target, dpi=50)
+    assert target.exists()
 
 
-def test_render_pages_rejects_missing_pdf(tmp_path):
+def test_render_page_skips_existing(tmp_path):
+    target = tmp_path / "page-001.png"
+    target.write_bytes(b"already here")
+    render_page(FIXTURES / "slides.pdf", 1, target, dpi=50)
+    assert target.read_bytes() == b"already here"
+
+
+def test_render_page_rejects_missing_pdf(tmp_path):
     with pytest.raises(FileNotFoundError):
-        render_pages(tmp_path / "nope.pdf", tmp_path)
+        render_page(tmp_path / "nope.pdf", 1, tmp_path / "page-001.png")

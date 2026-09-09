@@ -1,12 +1,7 @@
 import pytest
 
-from anki_wizard.cursor import (
-    advance,
-    load_cursor,
-    locked_cursor,
-    next_section,
-    save_cursor,
-)
+from anki_wizard.atomic import locked
+from anki_wizard.cursor import advance, load_cursor, next_section, save_cursor
 from anki_wizard.models import Cursor, Outline, Section
 
 
@@ -109,7 +104,7 @@ def test_concurrent_covers_do_not_lose_each_other(tmp_path):
 
     def cover(section_id: str) -> None:
         start.wait()
-        with locked_cursor(path):
+        with locked(path):
             save_cursor(path, advance(outline, load_cursor(path), section_id))
 
     workers = [threading.Thread(target=cover, args=(s,)) for s in ("1.1", "1.2")]

@@ -3,16 +3,19 @@
 The next section is the first in outline order that is not in `covered` --
 deliberately not "the one after `position`". Sections get skipped and returned
 to, so a high-water mark would lose work.
+
+The cursor is the same kind of state as the ledger and loses the same way, so
+callers guard a load/advance/save with atomic.locked: two of them covering
+different sections would each write back their own view, and one section's
+coverage would disappear.
 """
 
-import contextlib
 import json
-from collections.abc import Iterator
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
-from anki_wizard.atomic import locked, write_text_atomic
+from anki_wizard.atomic import write_text_atomic
 from anki_wizard.models import Cursor, Outline, Section
 
 
@@ -51,15 +54,3 @@ def load_cursor(path: Path) -> Cursor:
 
 def save_cursor(path: Path, cursor: Cursor) -> None:
     write_text_atomic(path, json.dumps(asdict(cursor), indent=2))
-
-
-@contextlib.contextmanager
-def locked_cursor(path: Path) -> Iterator[None]:
-    """Guard a load/advance/save of the cursor.
-
-    The cursor is the same kind of state as the ledger and loses the same way:
-    two callers covering different sections each write back their own view, and
-    one section's coverage disappears.
-    """
-    with locked(path):
-        yield

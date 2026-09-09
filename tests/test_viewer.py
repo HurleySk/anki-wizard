@@ -104,9 +104,8 @@ def test_the_url_serves_the_current_pad(pad):
     assert fetch(url) == (200, "<p>rerendered</p>")
 
 
-def test_an_idle_server_stops_itself(pad, monkeypatch):
+def test_an_idle_server_stops_itself(pad):
     """The whole answer to "left running forever": it expires on its own."""
-    monkeypatch.setattr(viewer, "WATCHDOG_INTERVAL_SECONDS", 0.05)
     record = viewer.start_detached(
         pad, port=viewer.free_port(), idle_timeout_minutes=0.02
     )
@@ -124,9 +123,8 @@ def test_an_idle_server_stops_itself(pad, monkeypatch):
     assert not viewer.pidfile(pad).exists()
 
 
-def test_use_keeps_a_server_alive(pad, monkeypatch):
+def test_use_keeps_a_server_alive(pad):
     """An expiring server must not vanish out from under an active reader."""
-    monkeypatch.setattr(viewer, "WATCHDOG_INTERVAL_SECONDS", 0.05)
     record = viewer.start_detached(
         pad, port=viewer.free_port(), idle_timeout_minutes=0.05
     )

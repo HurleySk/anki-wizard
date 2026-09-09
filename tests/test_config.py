@@ -1,3 +1,4 @@
+import pytest
 import yaml
 
 from anki_wizard.config import Config, load_config
@@ -46,3 +47,26 @@ def test_empty_file_yields_defaults(tmp_path):
     p.write_text("")
     cfg = load_config(p)
     assert cfg == Config()
+
+
+def test_unknown_key_is_an_error(tmp_path):
+    """A misspelt key that does nothing is worse than one that complains.
+
+    The setting silently keeps its default, and the user is left believing they
+    configured something.
+    """
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.safe_dump({"deck": "Stats", "default_tag": ["oops"]}))
+    with pytest.raises(ValueError) as caught:
+        load_config(p)
+    assert "default_tag" in str(caught.value)
+    assert str(p) in str(caught.value)
+
+
+def test_unknown_keys_are_all_named(tmp_path):
+    p = tmp_path / "config.yaml"
+    p.write_text(yaml.safe_dump({"nope": 1, "also_nope": 2}))
+    with pytest.raises(ValueError) as caught:
+        load_config(p)
+    message = str(caught.value)
+    assert "nope" in message and "also_nope" in message
