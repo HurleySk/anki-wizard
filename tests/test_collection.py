@@ -311,6 +311,9 @@ def test_note_blocks_tolerate_undecodable_media():
         blocks = note_blocks(1739985246842, client)
 
     assert blocks[0]["media"] == {}
+    # Named, not merely dropped: a corrupt file suggests a truncated download
+    # worth re-syncing, so which file it was is the useful part.
+    assert blocks[0]["unresolved_media"] == ["paste-abc.jpg"]
     # The rest of the note is untouched by the one bad file.
     assert (
         "Text",
@@ -323,7 +326,7 @@ def test_note_blocks_fetch_a_repeated_file_once():
     repeated = {
         **OUT_OF_ORDER_NOTE,
         "fields": {
-            # b before a, and b repeated: the fetch order must follow the
+            # c before a, and c repeated: the fetch order must follow the
             # note's own fields, which is the other half of why this uses
             # dict.fromkeys rather than a set.
             "Front": {"value": '<img src="c.png"> front', "order": 0},

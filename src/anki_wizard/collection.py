@@ -236,9 +236,11 @@ def note_blocks(note_id: int, client: AnkiClient) -> list[dict]:
             # it -- but the caller describing this note to the user sees only
             # what is returned, and "no images" and "three failed to load" are
             # otherwise the same empty dict. Kept inside the block rather than
-            # added as a prose block: prose refuses markup, and a filename
-            # holding "&amp;" would raise and take down the very pad this
-            # reporting exists to preserve.
+            # added as a prose block: prose rejects HTML entities, and a
+            # filename holding "&amp;" or "&nbsp;" -- ordinary for anything
+            # imported from web content -- would raise there and take down the
+            # very pad this reporting exists to preserve. A bare "&" is fine;
+            # it is the entity that trips it.
             "unresolved_media": unresolved,
         }
     ]
