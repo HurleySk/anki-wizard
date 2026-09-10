@@ -253,6 +253,14 @@ class AnkiClient:
             return []
         return info[0].get("cards", [])
 
+    def cards_info(self, card_ids: list[int]) -> list[dict]:
+        """Full records for these cards, including which deck each is in.
+
+        A note has no deck of its own -- its cards do -- so this is the only
+        way to answer where a note lives.
+        """
+        return self._invoke("cardsInfo", cards=card_ids)
+
     def update_note_model(
         self, note_id: int, model_name: str, fields: dict[str, str], tags: list[str]
     ) -> None:

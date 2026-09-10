@@ -281,12 +281,16 @@ _NOTE_MIME_BY_SUFFIX = {
 }
 
 
-def _reveal_clozes(html: str) -> str:
+def reveal_clozes(html: str) -> str:
     """Show a deletion's answer instead of its markup.
 
     The pad is for working through a card's content with the user, who is
     looking at it precisely because they want to see the answer. Hints are
     dropped: they exist to prompt recall, which is not what this surface does.
+
+    Public because collection.py's search/read previews need the same reveal:
+    a note pulled from anywhere in the collection can carry cloze markup, and
+    a preview showing "{{c1::network}}" instead of "network" is unreadable.
     """
     return _CLOZE.sub(lambda m: m.group(1), html)
 
@@ -346,7 +350,7 @@ def _render_note(block: dict) -> str:
     for name, value in fields:
         if not value or not value.strip():
             continue
-        rendered = _inline_media(_reveal_clozes(value), media)
+        rendered = _inline_media(reveal_clozes(value), media)
         parts.append(
             f'<section class="note-field">'
             f'<h3 class="field-name">{escape(name)}</h3>'
