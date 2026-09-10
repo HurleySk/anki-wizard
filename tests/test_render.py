@@ -220,16 +220,57 @@ def test_image_mime_cannot_break_out_of_the_src_attribute():
 def test_a_hostile_filename_cannot_reach_the_src_attribute(tmp_path):
     """A filename is never interpolated, so the suffix cannot carry a quote out.
 
-    The suffix table has no entry for this one, and the fallback it lands on is
-    a fixed literal rather than anything derived from the name. Anki media
-    filenames are user data, so it is worth pinning that the name stays out of
-    the attribute entirely.
+    The suffix table has no entry for this one, so it is refused by name rather
+    than reaching the attribute. Anki media filenames are user data, so it is
+    worth pinning that the name stays out of the page either way.
     """
     odd = tmp_path / 'x.png" onerror="alert(1)'
     odd.write_bytes(b"X")
-    html = render_html([{"type": "image", "path": str(odd)}])
-    assert "onerror" not in html
-    assert "data:application/octet-stream;base64," in html
+    with pytest.raises(ValueError, match="cannot infer"):
+        render_html([{"type": "image", "path": str(odd)}])
+
+
+def test_an_unknown_suffix_is_refused_rather_than_guessed(tmp_path):
+    """A non-image data URI renders as nothing, which is the silent failure.
+
+    Requiring a mime for bytes and then guessing one for a path would leave the
+    same mislabelled URI the strictness exists to prevent.
+    """
+    odd = tmp_path / "scan.tiff"
+    odd.write_bytes(b"X")
+    with pytest.raises(ValueError, match=r"scan\.tiff"):
+        render_html([{"type": "image", "path": str(odd)}])
+
+
+def test_an_explicit_mime_carries_a_suffix_the_table_lacks(tmp_path):
+    """The escape hatch from the refusal above: name the mime yourself."""
+    odd = tmp_path / "scan.tiff"
+    odd.write_bytes(b"X")
+    html = render_html([{"type": "image", "path": str(odd), "mime": "image/tiff"}])
+    assert "data:image/tiff;base64," in html
+
+
+def test_svg_is_inlined_through_img_which_renders_it_inert(tmp_path):
+    """The <img> sink is load-bearing, not incidental.
+
+    An SVG in <img src> renders in secure static mode -- no script, no external
+    fetches -- which is what makes it safe to inline media from a shared deck.
+    Through <object> or an inline <svg> the same bytes execute. Task 9 feeds
+    this the user's real collection, so the tag is pinned here rather than left
+    to whoever edits the f-string next.
+    """
+    svg = tmp_path / "diagram.svg"
+    svg.write_bytes(b'<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+    html = render_html([{"type": "image", "path": str(svg)}])
+    assert '<img src="data:image/svg+xml;base64,' in html
+
+
+def test_image_alt_is_escaped():
+    """alt is interpolated into an attribute exactly as mime is."""
+    html = render_html([
+        {"type": "image", "data": b"X", "mime": "image/png", "alt": "a < b"}
+    ])
+    assert 'alt="a &lt; b"' in html
 
 
 def test_an_explicit_mime_is_checked_on_the_path_branch_too(tmp_path):

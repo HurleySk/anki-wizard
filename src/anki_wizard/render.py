@@ -178,8 +178,10 @@ def _render_image(block: dict) -> str:
     Bytes require an explicit mime: Anki media can be PNG, JPEG, GIF, or WEBP,
     and a wrong label in a data URI is silently wrong -- some browsers sniff
     the real format and render anyway, others don't, so the failure would not
-    show up until someone opens the pad in the "wrong" one. A path infers the
-    mime from its suffix instead, since the file's extension is the mime.
+    show up until someone opens the pad in the "wrong" one. A path takes an
+    explicit mime if given, else a known suffix; an unrecognised suffix raises
+    rather than guessing, for that same reason -- the guess a browser cannot
+    render is a blank space on the pad and no error anywhere.
     """
     data = block.get("data")
     path = block.get("path")
@@ -189,21 +191,29 @@ def _render_image(block: dict) -> str:
     if data is None:
         source = Path(path)
         data = source.read_bytes()
-        mime = block.get("mime") or _MIME_BY_SUFFIX.get(
-            source.suffix.lower(), "application/octet-stream"
-        )
+        mime = block.get("mime") or _MIME_BY_SUFFIX.get(source.suffix.lower())
+        if not mime:
+            # A non-image data URI never enters the browser's image decode
+            # path, so a fallback here would render as nothing at all. Naming
+            # the file and the way out beats a blank figure on the pad.
+            raise ValueError(
+                f"cannot infer an image mime type from {source.name!r}; "
+                "pass mime explicitly"
+            )
     else:
         mime = block.get("mime")
         if not mime:
             raise ValueError("an image block built from data needs a mime type")
 
     if not _MIME.fullmatch(mime):
-        # mime lands inside the src attribute, so a value carrying a quote
-        # would close it and let the rest become attributes of its own -- an
-        # onerror handler, say. Anki media filenames are user data and a note
-        # block infers this from them, so the check is against a shape rather
-        # than an escape: a mime that is not a mime is a bug either way.
-        raise ValueError(f"not a usable image mime type: {mime!r}")
+        # An injection boundary, not a format policy: this checks the shape a
+        # mime has, so text/html passes and only a value that could carry a
+        # quote out of the src attribute is refused. mime lands inside that
+        # attribute, where a quote would close it and let the rest become
+        # attributes of its own -- an onerror handler, say. Escaping would
+        # admit a broken-but-inert value silently; a mime that is not a mime
+        # is a bug whichever way it arrived, so it raises.
+        raise ValueError(f"not a well-formed mime type: {mime!r}")
 
     encoded = base64.b64encode(data).decode("ascii")
     caption = block.get("caption")
