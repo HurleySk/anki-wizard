@@ -234,7 +234,7 @@ def test_retrieve_media_file_raises_anki_error_on_malformed_payload():
 
 
 def test_retrieve_media_file_raises_anki_error_on_non_ascii_payload():
-    """A character outside Latin-1 fails encoding before base64 ever runs.
+    """A non-ASCII character fails encoding before base64 ever runs.
 
     That raises a plain ValueError rather than binascii.Error, a distinct
     path from the malformed-payload case above -- catching only
