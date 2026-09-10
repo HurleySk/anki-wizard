@@ -164,3 +164,35 @@ def test_comparisons_in_prose_are_not_mistaken_for_markup():
     """The guard must not break the case escaping exists for."""
     html = render_html([{"type": "prose", "text": "if a < b and c > d"}])
     assert "a &lt; b" in html
+
+
+def test_image_block_inlines_bytes_as_base64():
+    """Inlined for the same reason figures are: the page is one artifact."""
+    html = render_html([{"type": "image", "data": b"PNGDATA", "mime": "image/png"}])
+    assert "data:image/png;base64,UE5HREFUQQ==" in html
+
+
+def test_image_block_reads_a_path(tmp_path):
+    image = tmp_path / "page-001.png"
+    image.write_bytes(b"PNGDATA")
+    html = render_html([{"type": "image", "path": str(image)}])
+    assert "data:image/png;base64,UE5HREFUQQ==" in html
+
+
+def test_image_block_infers_mime_from_the_suffix(tmp_path):
+    image = tmp_path / "figure.jpg"
+    image.write_bytes(b"JPEGDATA")
+    html = render_html([{"type": "image", "path": str(image)}])
+    assert "data:image/jpeg;base64," in html
+
+
+def test_image_caption_is_escaped():
+    html = render_html([
+        {"type": "image", "data": b"X", "mime": "image/png", "caption": "a < b"}
+    ])
+    assert "a &lt; b" in html
+
+
+def test_image_block_needs_data_or_a_path():
+    with pytest.raises(ValueError, match=r"data.*path"):
+        render_html([{"type": "image"}])

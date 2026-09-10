@@ -1,8 +1,9 @@
 """Content blocks to a self-contained HTML page.
 
-Pure: blocks in, HTML string out. No filesystem, no browser, no matplotlib
-import at module level. That purity is what lets the rendering rules be tested
-exhaustively without a display.
+No network, no display, no matplotlib import at module level -- the rendering
+rules are tested exhaustively without either. An `image` block with a `path`
+is the one exception to "no filesystem": it reads that file so the pad can
+show Anki media and rendered PDF pages, which exist only on disk.
 
 The page uses the same MathJax delimiters as the cards -- \\(...\\) and \\[...\\]
 -- so a formula that renders here renders in Anki.
@@ -12,6 +13,7 @@ import base64
 import io
 import re
 from html import escape
+from pathlib import Path
 
 MATHJAX_CDN = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
 
@@ -107,6 +109,8 @@ def _render_block(block: dict) -> str:
         if not steps:
             raise ValueError("a steps block needs at least one step")
         return "\n".join(_render_step(i, s) for i, s in enumerate(steps, 1))
+    if kind == "image":
+        return _render_image(block)
     if kind == "figure":
         return _render_figure(block)
     raise ValueError(f"unknown block type: {kind!r}")
@@ -146,6 +150,55 @@ def _render_step(number: int, step: dict) -> str:
     if why:
         row += f'\n<div class="step-why">{escape(why)}</div>'
     return row
+
+
+_MIME_BY_SUFFIX = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+
+
+def _render_image(block: dict) -> str:
+    """An image from bytes or a path, inlined like a figure.
+
+    Bytes rather than a URL because the pad's images come from Anki's media
+    collection and from rendered PDF pages -- neither is reachable from the
+    page, and a promoted note must not break when its sources move.
+
+    Bytes require an explicit mime: Anki media can be PNG, JPEG, GIF, or WEBP,
+    and a wrong label in a data URI is silently wrong -- some browsers sniff
+    the real format and render anyway, others don't, so the failure would not
+    show up until someone opens the pad in the "wrong" one. A path infers the
+    mime from its suffix instead, since the file's extension is the mime.
+    """
+    data = block.get("data")
+    path = block.get("path")
+    if data is None and path is None:
+        raise ValueError("an image block needs data or a path")
+
+    if data is None:
+        source = Path(path)
+        data = source.read_bytes()
+        mime = block.get("mime") or _MIME_BY_SUFFIX.get(
+            source.suffix.lower(), "application/octet-stream"
+        )
+    else:
+        mime = block.get("mime")
+        if not mime:
+            raise ValueError("an image block built from data needs a mime type")
+
+    encoded = base64.b64encode(data).decode("ascii")
+    caption = block.get("caption")
+    caption_html = f"\n<figcaption>{escape(caption)}</figcaption>" if caption else ""
+    alt = escape(block.get("alt", ""))
+    return (
+        f'<figure><img src="data:{mime};base64,{encoded}" alt="{alt}">'
+        f"{caption_html}</figure>"
+    )
 
 
 def _render_figure(block: dict) -> str:
