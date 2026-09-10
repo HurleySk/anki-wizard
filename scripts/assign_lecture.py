@@ -17,7 +17,8 @@ from pathlib import Path
 from anki_wizard.anki import AnkiClient, AnkiError, AnkiNotRunning
 from anki_wizard.atomic import locked
 from anki_wizard.config import load_config
-from anki_wizard.ledger import load_ledger, save_ledger
+from anki_wizard.ledger import cards_only, load_ledger, save_ledger
+from anki_wizard.models import Card
 from anki_wizard.paths import Paths
 from anki_wizard.tools import deck_for
 
@@ -45,9 +46,12 @@ def main(argv: list[str]) -> int:
         return 1
 
     target = deck_for(config.deck, lecture)
+    # cards_only: an adopted note has no .state or .lecture, and this survey
+    # only computes what to print and which ids to relabel below -- it is
+    # never the list a save writes back, so narrowing it here is safe.
     # Rejected cards never reached Anki and never will, so refiling them would
     # only add noise to the ledger's history.
-    live = [c for c in cards if c.state != "rejected"]
+    live = [c for c in cards_only(cards) if c.state != "rejected"]
     to_move = [c for c in live if c.state == "pushed" and c.lecture != lecture]
     to_label = [c for c in live if c.lecture != lecture]
 
@@ -95,9 +99,12 @@ def main(argv: list[str]) -> int:
     labelled = 0
     relabel = {c.id for c in to_label} - failed_ids
     with locked(ledger_path):
+        # Not cards_only here: this list is the one save_ledger writes back,
+        # and an adopted note has no .id to match against relabel, so it is
+        # skipped by the isinstance check rather than dropped from the list.
         cards = load_ledger(ledger_path)
         for index, card in enumerate(cards):
-            if card.id in relabel and card.lecture != lecture:
+            if isinstance(card, Card) and card.id in relabel and card.lecture != lecture:
                 cards[index].lecture = lecture
                 labelled += 1
         save_ledger(ledger_path, cards)

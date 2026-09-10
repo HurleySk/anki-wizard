@@ -13,6 +13,11 @@ import re
 from html import unescape
 
 from anki_wizard.anki import AnkiClient, AnkiError
+from anki_wizard.atomic import locked
+from anki_wizard.cloze import cloze_numbers
+from anki_wizard.ledger import adopt_note, load_ledger, record, save_ledger
+from anki_wizard.models import AdoptedNote
+from anki_wizard.paths import Paths, deck_slug
 from anki_wizard.render import reveal_clozes
 
 # Stripping tags alone leaves the CSS or JS body behind as if it were text,
@@ -254,3 +259,164 @@ def list_decks(client: AnkiClient) -> dict:
     splits reviews with no error to notice.
     """
     return {"decks": sorted(client.deck_names())}
+
+
+def _unterminated_deletion(text: str) -> bool:
+    """Whether `text` has more deletion openers than closers.
+
+    cloze_numbers reads only "{{cN::" and deliberately never matches the
+    closing "}}" (see cloze.py's comment), so a deletion truncated mid-field
+    -- "{{c1::mean" with no close -- still reports {1}, identical to the
+    intact field. That defeats the ordinal-diff guard below: nothing looks
+    lost because the ordinal is still there, just inside markup that no
+    longer describes a real deletion. A field with more "{{" than "}}" is
+    malformed regardless of what any ordinal says, so it is caught here,
+    separately from and before the ordinal comparison.
+    """
+    return text.count("{{") > text.count("}}")
+
+
+def edit_note(
+    note_id: int,
+    changes: dict[str, str],
+    client: AnkiClient,
+    paths: Paths,
+    force: bool = False,
+) -> dict:
+    """Edit a note this harness did not author, and record that it happened.
+
+    Four guards, in order, because each is cheaper than the one after it and
+    all of them are cheaper than an unrecoverable write:
+
+    1. Every named field must exist on the note. Anki would otherwise reject
+       the call or, worse, take a near-miss name as a new field.
+    2. No proposed value may leave a cloze deletion truncated -- more "{{"
+       than "}}". This is a malformed-input check, not a judgement call about
+       intent, so `force` does not bypass it: a truncated deletion does not
+       reliably generate the card its ordinal suggests, so counting ordinals
+       against it would be checking the wrong thing.
+    3. No cloze deletion may disappear. Anki generates one card per deletion,
+       so dropping one deletes that card and its scheduling history. This is a
+       heuristic -- card generation also depends on templates -- so it refuses
+       rather than warns, and `force` is the way past it.
+    4. Values equal to what is already there are dropped, so an unchanged
+       "edit" is not written and not recorded.
+
+    The note must have a deck (checked before any write reaches Anki): a note
+    with no cards has nowhere to be filed in the ledger, and finding that out
+    only after the write would leave Anki edited with no audit trail, which is
+    the one outcome adoption exists to avoid.
+    """
+    note = read_note(note_id, client)
+    known = set(note["field_names"])
+
+    unknown = sorted(set(changes) - known)
+    if unknown:
+        raise ValueError(
+            f"note {note_id} ({note['model']}) has no field "
+            f"{', '.join(repr(u) for u in unknown)}. Its fields are: "
+            f"{', '.join(note['field_names'])}."
+        )
+
+    unterminated = sorted(
+        name for name, value in changes.items() if _unterminated_deletion(value)
+    )
+    if unterminated:
+        raise ValueError(
+            f"note {note_id}: field {', '.join(repr(u) for u in unterminated)} "
+            "would leave a cloze deletion unterminated (more '{{' than '}}'). "
+            "This looks like truncated markup, not a deliberate removal, so it "
+            "is refused regardless of force."
+        )
+
+    before_numbers: set[int] = set()
+    after_numbers: set[int] = set()
+    for name in known:
+        current = note["fields"].get(name, "")
+        proposed = changes.get(name, current)
+        before_numbers |= cloze_numbers(current)
+        after_numbers |= cloze_numbers(proposed)
+
+    lost = sorted(before_numbers - after_numbers)
+    if lost and not force:
+        raise ValueError(
+            f"this edit removes cloze deletion(s) "
+            f"{', '.join(f'c{n}' for n in lost)} from note {note_id}, which "
+            f"deletes {len(lost)} card(s) in Anki along with their review "
+            "history. Pass force=True only if that is intended."
+        )
+
+    changed = {
+        name: value
+        for name, value in changes.items()
+        if value != note["fields"].get(name, "")
+    }
+    diff = {
+        name: {"before": note["fields"].get(name, ""), "after": value}
+        for name, value in changed.items()
+    }
+
+    if not changed:
+        return {
+            "note_id": note_id,
+            "written": [],
+            "diff": {},
+            "cards_deleted": [],
+            "message": "no change: the values given match the note",
+        }
+
+    if not note["deck"]:
+        # Checked here, after the no-op short-circuit above (an edit that
+        # changes nothing never needs a deck) but before the write below: a
+        # note with no cards has no deck to slug, and deck_slug("") raises
+        # blaming an empty charset -- true but misleading about a note that
+        # simply has nowhere to be filed. Anki still has the note, so the
+        # write itself would very likely succeed; refusing here rather than
+        # letting adopt_note fail afterward is what keeps a real edit from
+        # landing in Anki with no ledger trail to show for it.
+        raise ValueError(
+            f"note {note_id} has no cards, so it belongs to no deck and cannot "
+            "be adopted"
+        )
+
+    client.update_note_fields_by_name(note_id, changed)
+
+    ledger_path = paths.ledger_file(deck_slug(note["deck"]))
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    adopt_note(
+        ledger_path,
+        note_id=note_id,
+        model=note["model"],
+        deck=note["deck"],
+        fields=note["field_names"],
+    )
+    _record_edit(ledger_path, note_id, sorted(changed))
+
+    return {
+        "note_id": note_id,
+        "written": sorted(changed),
+        "diff": diff,
+        "cards_deleted": lost,
+        "message": f"updated {len(changed)} field(s) on note {note_id}",
+    }
+
+
+def _record_edit(ledger_path, note_id: int, fields: list[str]) -> None:
+    """Append the edit to the adopted note's history.
+
+    Separate from adopt_note so adoption stays idempotent: a note is adopted
+    once and edited many times. Raises rather than falling off the loop if no
+    matching entry is found, because a silent no-op here would mean the write
+    already sent to Anki has no record of ever having happened.
+    """
+    with locked(ledger_path):
+        entries = load_ledger(ledger_path)
+        for index, entry in enumerate(entries):
+            if isinstance(entry, AdoptedNote) and entry.note_id == note_id:
+                entries[index] = record(entry, "edited")
+                save_ledger(ledger_path, entries)
+                return
+    raise ValueError(
+        f"note {note_id} was edited in Anki but has no adopted entry in "
+        f"{ledger_path} to record it against; the edit is unrecorded"
+    )

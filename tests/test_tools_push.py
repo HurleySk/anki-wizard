@@ -4,7 +4,8 @@ import pytest
 
 from anki_wizard.anki import AnkiClient, AnkiNotRunning
 from anki_wizard.cursor import load_cursor
-from anki_wizard.ledger import load_ledger
+from anki_wizard.ledger import adopt_note, load_ledger
+from anki_wizard.models import AdoptedNote
 from anki_wizard.paths import Paths
 from anki_wizard.tools import (
     ingest_source,
@@ -346,3 +347,30 @@ def test_reviewing_conversation_cards_touches_no_cursor(workspace):
     )
     result = review_cards("conversation", {"c-0001": "approve"}, paths=workspace)
     assert result["sections_covered"] == []
+
+
+def test_push_leaves_an_adopted_note_in_the_ledger_untouched(workspace):
+    """A ledger can hold a Card and an AdoptedNote side by side.
+
+    push_to_anki reads and rewrites the whole ledger file, so a filtering
+    mistake there would silently drop the adoption record -- the only trail
+    an edit to a foreign note leaves -- on the next unrelated push.
+    """
+    ledger_path = workspace.ledger_file("slides")
+    adopted = adopt_note(
+        ledger_path,
+        note_id=999,
+        model="Basic",
+        deck="Some Deck",
+        fields=["Front", "Back"],
+    )
+    approved(workspace, 1)
+    with FakeAnki() as fake:
+        fake.set_response("version", 6)
+        fake.set_response("createDeck", 1)
+        fake.set_response("addNotes", [1001])
+        push_to_anki("slides", AnkiClient(fake.url), deck="Deck", paths=workspace)
+
+    entries = load_ledger(ledger_path)
+    adopted_entries = [e for e in entries if isinstance(e, AdoptedNote)]
+    assert adopted_entries == [adopted]

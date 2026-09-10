@@ -13,6 +13,7 @@ from anki_wizard.atomic import locked, write_text_atomic
 from anki_wizard.cursor import advance, load_cursor, next_section, save_cursor
 from anki_wizard.ledger import (
     append_cards,
+    cards_only,
     edit_card,
     index_of,
     load_ledger,
@@ -266,7 +267,7 @@ def skip_section(slug: str, section_id: str, reason: str, paths: Paths) -> dict:
     if ledger_path.exists():
         live = [
             card
-            for card in load_ledger(ledger_path)
+            for card in cards_only(load_ledger(ledger_path))
             if card.source.section == section_id and card.state != "rejected"
         ]
         if live:
@@ -358,7 +359,7 @@ def _cover_settled_sections(slug: str, cards: list, paths: Paths) -> list[str]:
 
     pending: set[str] = set()
     touched: set[str] = set()
-    for card in cards:
+    for card in cards_only(cards):
         section = card.source.section
         if not section:
             continue
@@ -463,7 +464,15 @@ def push_to_anki(slug: str, client: AnkiClient, deck: str, paths: Paths) -> dict
     ledger_path = paths.ledger_file(slug)
     with locked(ledger_path):
         cards = load_ledger(ledger_path)
-        pending = [(i, c) for i, c in enumerate(cards) if c.state == "approved"]
+        # isinstance, not cards_only: an adopted note has no .state, but this
+        # list is indexed straight into `cards` for the read-modify-write
+        # below, so filtering the list itself would misalign every index i
+        # against entries a save must still include.
+        pending = [
+            (i, c)
+            for i, c in enumerate(cards)
+            if isinstance(c, Card) and c.state == "approved"
+        ]
         if not pending:
             return {"pushed": 0, "failed": 0, "message": "no approved cards to push"}
 

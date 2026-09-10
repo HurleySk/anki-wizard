@@ -12,6 +12,7 @@ from anki_wizard.collection import (
     read_note,
     search_collection,
 )
+from anki_wizard.paths import Paths
 from tests.fake_anki import FakeAnki
 
 CLOZE_NOTE = {
@@ -384,3 +385,225 @@ def test_note_blocks_name_the_media_they_could_not_load():
 
     assert blocks[0]["media"] == {}
     assert blocks[0]["unresolved_media"] == ["paste-abc.jpg"]
+
+
+def edit_fake(fake, note=None):
+    """Responses for a note that is read, then written."""
+    fake.set_response("notesInfo", [note or CLOZE_NOTE])
+    fake.set_response("cardsInfo", [{"deckName": "Intro to Probability::Unit I"}])
+    fake.set_response("updateNoteFields", None)
+
+
+def test_editing_a_field_writes_only_that_field(tmp_path):
+    from anki_wizard.collection import edit_note
+
+    with FakeAnki() as fake:
+        edit_fake(fake)
+        client = AnkiClient(fake.url)
+
+        result = edit_note(
+            1739985246842,
+            {"Answer": "corrected"},
+            client,
+            Paths(root=tmp_path),
+        )
+
+    written = next(r for r in fake.requests if r["action"] == "updateNoteFields")
+    assert written["params"]["note"]["fields"] == {"Answer": "corrected"}
+    assert result["written"] == ["Answer"]
+
+
+def test_an_unknown_field_name_is_refused(tmp_path):
+    """A typo must not create a field or blank a real one."""
+    from anki_wizard.collection import edit_note
+
+    with FakeAnki() as fake:
+        edit_fake(fake)
+        client = AnkiClient(fake.url)
+
+        with pytest.raises(ValueError, match="Anwser"):
+            edit_note(
+                1739985246842, {"Anwser": "x"}, client, Paths(root=tmp_path)
+            )
+
+    assert not any(r["action"] == "updateNoteFields" for r in fake.requests)
+
+
+def test_dropping_a_cloze_deletion_is_refused(tmp_path):
+    """Removing c1 deletes a card in Anki and its review history with it."""
+    from anki_wizard.collection import edit_note
+
+    with FakeAnki() as fake:
+        edit_fake(fake)
+        client = AnkiClient(fake.url)
+
+        with pytest.raises(ValueError, match="c1"):
+            edit_note(
+                1739985246842,
+                {"Text": "A network connects A and B."},
+                client,
+                Paths(root=tmp_path),
+            )
+
+    assert not any(r["action"] == "updateNoteFields" for r in fake.requests)
+
+
+def test_force_overrides_the_cloze_guard(tmp_path):
+    from anki_wizard.collection import edit_note
+
+    with FakeAnki() as fake:
+        edit_fake(fake)
+        client = AnkiClient(fake.url)
+
+        result = edit_note(
+            1739985246842,
+            {"Text": "A network connects A and B."},
+            client,
+            Paths(root=tmp_path),
+            force=True,
+        )
+
+    assert any(r["action"] == "updateNoteFields" for r in fake.requests)
+    assert result["cards_deleted"] == [1]
+
+
+def test_adding_a_cloze_deletion_is_allowed(tmp_path):
+    """Additions create a card; nothing is lost, so nothing needs forcing."""
+    from anki_wizard.collection import edit_note
+
+    with FakeAnki() as fake:
+        edit_fake(fake)
+        client = AnkiClient(fake.url)
+
+        result = edit_note(
+            1739985246842,
+            {"Text": "A {{c1::network}} connects {{c2::A}} and B."},
+            client,
+            Paths(root=tmp_path),
+        )
+
+    assert result["written"] == ["Text"]
+
+
+def test_an_edit_returns_a_field_level_diff(tmp_path):
+    from anki_wizard.collection import edit_note
+
+    with FakeAnki() as fake:
+        edit_fake(fake)
+        client = AnkiClient(fake.url)
+
+        result = edit_note(
+            1739985246842, {"Answer": "corrected"}, client, Paths(root=tmp_path)
+        )
+
+    diff = result["diff"]["Answer"]
+    assert diff["before"] == '<img src="paste-abc.jpg"> so \\(0.957\\)'
+    assert diff["after"] == "corrected"
+
+
+def test_an_unchanged_value_writes_nothing(tmp_path):
+    from anki_wizard.collection import edit_note
+
+    with FakeAnki() as fake:
+        edit_fake(fake)
+        client = AnkiClient(fake.url)
+
+        result = edit_note(
+            1739985246842,
+            {"Answer": '<img src="paste-abc.jpg"> so \\(0.957\\)'},
+            client,
+            Paths(root=tmp_path),
+        )
+
+    assert result["written"] == []
+    assert not any(r["action"] == "updateNoteFields" for r in fake.requests)
+
+
+def test_editing_adopts_the_note_into_a_deck_slug_ledger(tmp_path):
+    from anki_wizard.collection import edit_note
+    from anki_wizard.ledger import load_ledger
+
+    paths = Paths(root=tmp_path)
+    with FakeAnki() as fake:
+        edit_fake(fake)
+        client = AnkiClient(fake.url)
+
+        edit_note(1739985246842, {"Answer": "corrected"}, client, paths)
+
+    ledger = paths.ledger_file("intro-to-probability")
+    assert ledger.exists()
+
+    entries = load_ledger(ledger)
+    assert entries[0].note_id == 1739985246842
+    actions = [h["action"] for h in entries[0].history]
+    assert actions == ["adopted", "edited"]
+
+
+def test_a_truncated_cloze_deletion_is_refused_even_though_ordinals_match(tmp_path):
+    """cloze_numbers never matches a closing brace, so a truncated deletion
+
+    still counts as "c1 present" before and after -- the ordinal-diff guard
+    alone would wave this through even though the deletion, and the card Anki
+    generates from it, no longer exists as valid markup. An unbalanced
+    "{{"/"}}" count is refused regardless of what the ordinals say.
+    """
+    from anki_wizard.collection import edit_note
+
+    with FakeAnki() as fake:
+        edit_fake(fake)
+        client = AnkiClient(fake.url)
+
+        with pytest.raises(ValueError, match="Text"):
+            edit_note(
+                1739985246842,
+                {"Text": "A {{c1::network connects \\(A\\) and \\(B\\)."},
+                client,
+                Paths(root=tmp_path),
+            )
+
+    assert not any(r["action"] == "updateNoteFields" for r in fake.requests)
+
+
+def test_a_truncated_cloze_deletion_is_refused_even_with_force(tmp_path):
+    """force is for a deliberate drop of a whole deletion, not for malformed
+
+    markup -- a truncated "{{" is refused unconditionally.
+    """
+    from anki_wizard.collection import edit_note
+
+    with FakeAnki() as fake:
+        edit_fake(fake)
+        client = AnkiClient(fake.url)
+
+        with pytest.raises(ValueError, match="unterminated"):
+            edit_note(
+                1739985246842,
+                {"Text": "A {{c1::network connects \\(A\\) and \\(B\\)."},
+                client,
+                Paths(root=tmp_path),
+                force=True,
+            )
+
+    assert not any(r["action"] == "updateNoteFields" for r in fake.requests)
+
+
+def test_editing_a_note_with_no_cards_names_the_real_cause(tmp_path):
+    """deck_slug("") blames the charset; the real cause is "no deck at all".
+
+    Checked before the write reaches Anki -- otherwise the edit lands and the
+    ledger record fails afterward, leaving an edited note with no audit trail,
+    which defeats the reason adoption exists.
+    """
+    from anki_wizard.collection import edit_note
+
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [{**CLOZE_NOTE, "cards": []}])
+        fake.set_response("updateNoteFields", None)
+        client = AnkiClient(fake.url)
+
+        with pytest.raises(ValueError, match="no cards"):
+            edit_note(
+                1739985246842, {"Answer": "corrected"}, client, Paths(root=tmp_path)
+            )
+
+    assert not any(r["action"] == "updateNoteFields" for r in fake.requests)

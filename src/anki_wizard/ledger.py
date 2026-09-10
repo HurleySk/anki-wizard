@@ -131,6 +131,11 @@ def save_ledger(path: Path, entries: list[Card | AdoptedNote]) -> None:
     )
 
 
+def cards_only(entries: list[Card | AdoptedNote]) -> list[Card]:
+    """Just the authored cards. Adopted notes have no state, source or lecture."""
+    return [e for e in entries if isinstance(e, Card)]
+
+
 def index_of(cards: list[Card | AdoptedNote], card_id: str, slug: str) -> int:
     """The position of `card_id` in the ledger, or ValueError naming the slug.
 
