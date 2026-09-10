@@ -291,3 +291,107 @@ def test_an_explicit_mime_is_checked_on_the_path_branch_too(tmp_path):
                 }
             ]
         )
+
+
+def test_note_block_renders_fields_in_order():
+    html = render_html([{
+        "type": "note",
+        "fields": [("Text", "the question"), ("Answer", "the answer")],
+    }])
+    assert "the question" in html
+    assert "the answer" in html
+    assert html.index("the question") < html.index("the answer")
+
+
+def test_note_block_labels_each_field():
+    html = render_html([{"type": "note", "fields": [("Back Extra", "a source")]}])
+    assert "Back Extra" in html
+
+
+def test_note_block_skips_empty_fields():
+    """A sixteen-field note type is mostly empty; showing blanks buries content."""
+    html = render_html([{
+        "type": "note",
+        "fields": [("Text", "kept"), ("Summary 7", ""), ("Summary 8", "   ")],
+    }])
+    assert "kept" in html
+    assert "Summary 7" not in html
+    assert "Summary 8" not in html
+
+
+def test_note_block_renders_cloze_deletions_readably():
+    """Raw {{c1::...}} is unreadable; the answer is what the user is discussing."""
+    html = render_html([{
+        "type": "note",
+        "fields": [("Text", "the {{c1::mean}} of {{c2::X}}")],
+    }])
+    assert "{{c1::" not in html
+    assert "mean" in html
+    assert "X" in html
+
+
+def test_note_block_drops_a_cloze_hint():
+    html = render_html([{"type": "note", "fields": [("Text", "{{c1::ans::hint}}")]}])
+    assert "ans" in html
+    assert "hint" not in html
+
+
+def test_note_block_keeps_field_html_and_math():
+    """Fields are HTML and their math is MathJax, exactly as in Anki."""
+    html = render_html([{
+        "type": "note",
+        "fields": [("Text", r"a<br><b>bold</b> and \(\sqrt{n}\)")],
+    }])
+    assert "<br>" in html
+    assert "<b>bold</b>" in html
+    assert r"\(\sqrt{n}\)" in html
+
+
+def test_note_block_substitutes_media():
+    """An <img> pointing at Anki's collection cannot load from the pad."""
+    html = render_html([{
+        "type": "note",
+        "fields": [("Text", '<img src="paste-abc.jpg" width="514">')],
+        "media": {"paste-abc.jpg": b"JPEGDATA"},
+    }])
+    assert "data:image/jpeg;base64,SlBFR0RBVEE=" in html
+    assert 'src="paste-abc.jpg"' not in html
+
+
+def test_note_block_leaves_unresolved_media_alone():
+    """A missing file must not blank the tag and hide that an image was there."""
+    html = render_html([{
+        "type": "note",
+        "fields": [("Text", '<img src="gone.jpg">')],
+        "media": {},
+    }])
+    assert "gone.jpg" in html
+
+
+def test_note_block_shows_a_title_when_given_one():
+    html = render_html([{
+        "type": "note",
+        "title": "L3 Independence",
+        "fields": [("Text", "q")],
+    }])
+    assert "L3 Independence" in html
+
+
+def test_note_block_leaves_unrecognised_media_suffix_alone():
+    """An unknown suffix from a real collection must not fail the whole pad.
+
+    _render_image raises on this because that block is built by our own code,
+    where a bad mime is a programming error worth surfacing. A note's fields
+    come from the user's actual Anki collection, so the same file that would
+    be a bug there is just an odd attachment here -- raising would take down
+    an otherwise-readable pad over one attachment we can't label. Left alone,
+    exactly like an unresolved filename, the tag stays visible and inert
+    instead of guessing a mime and risking a silently mislabelled data URI.
+    """
+    html = render_html([{
+        "type": "note",
+        "fields": [("Text", '<img src="note.tiff">')],
+        "media": {"note.tiff": b"TIFFDATA"},
+    }])
+    assert "note.tiff" in html
+    assert "data:image/png" not in html

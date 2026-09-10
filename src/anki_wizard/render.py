@@ -82,6 +82,12 @@ figcaption {
   margin-top: 0.6rem;
 }
 hr { border: 0; border-top: 1px solid var(--rule); margin: 2.5rem 0; }
+.note-field { margin: 1.5rem 0; }
+.field-name {
+  font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); margin: 0 0 0.35rem;
+}
+.note-field img { max-width: 100%; height: auto; }
 """
 
 
@@ -113,6 +119,8 @@ def _render_block(block: dict) -> str:
         return _render_image(block)
     if kind == "figure":
         return _render_figure(block)
+    if kind == "note":
+        return _render_note(block)
     raise ValueError(f"unknown block type: {kind!r}")
 
 
@@ -238,3 +246,94 @@ def _render_figure(block: dict) -> str:
         f'<figure><img src="data:image/png;base64,{encoded}" alt="">'
         f"{caption_html}</figure>"
     )
+
+
+# Anki writes media as a plain filename in the field's HTML, which resolves
+# only inside the collection. The pad has to inline the bytes instead.
+_IMG_SRC = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]+)(")', re.IGNORECASE)
+
+_CLOZE = re.compile(r"\{\{c\d+::(.*?)(?:::[^}]*)?\}\}", re.DOTALL)
+
+# A separate table from _MIME_BY_SUFFIX, deliberately not shared: this one
+# backs a lookup that must fail open (leave the tag alone) rather than raise,
+# so merging it with _render_image's table would tie together two branches
+# that need different failure behavior for the same missing key.
+_NOTE_MIME_BY_SUFFIX = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+
+
+def _reveal_clozes(html: str) -> str:
+    """Show a deletion's answer instead of its markup.
+
+    The pad is for working through a card's content with the user, who is
+    looking at it precisely because they want to see the answer. Hints are
+    dropped: they exist to prompt recall, which is not what this surface does.
+    """
+    return _CLOZE.sub(lambda m: m.group(1), html)
+
+
+def _inline_media(html: str, media: dict[str, bytes]) -> str:
+    def replace(match: re.Match) -> str:
+        filename = match.group(2)
+        data = media.get(filename)
+        if data is None:
+            # Left as it is on purpose: blanking the tag would hide that the
+            # card had an image at all, which is worse than a broken one.
+            return match.group(0)
+        suffix = Path(filename).suffix.lower()
+        mime = _NOTE_MIME_BY_SUFFIX.get(suffix)
+        if mime is None:
+            # _render_image raises on an unrecognised suffix, because that
+            # block is built by our own code and a bad mime there is a bug
+            # worth surfacing. This filename instead comes from the user's
+            # real Anki collection: raising would take down the whole pad
+            # over one odd attachment, which is worse than leaving a single
+            # image unrendered. So this fails the same way a missing file
+            # does -- tag untouched, filename still visible -- rather than
+            # guessing a mime and risking a silently mislabelled data URI.
+            return match.group(0)
+        encoded = base64.b64encode(data).decode("ascii")
+        return f"{match.group(1)}data:{mime};base64,{encoded}{match.group(3)}"
+
+    return _IMG_SRC.sub(replace, html)
+
+
+def _render_note(block: dict) -> str:
+    """An Anki note laid out for reading.
+
+    Takes fields and media already fetched rather than a note id, so this
+    module keeps no dependency on anki.py and stays testable without a server.
+
+    Field HTML is emitted unescaped, on purpose: Anki fields are HTML and their
+    math is MathJax, and escaping would show the user tags instead of a card.
+    The consequence is that a note's markup runs in the pad exactly as written
+    -- a <script> or an onerror handler in a field executes, and _IMG_SRC only
+    rewrites a quoted src, leaving the rest of a tag's attributes untouched.
+    This is accepted rather than sanitized: the pad is served on 127.0.0.1 to
+    one local user, not a remote surface, and the same HTML already runs
+    inside Anki itself whenever this card comes up for review.
+    """
+    fields = block["fields"]
+    media = block.get("media", {})
+
+    parts: list[str] = []
+    title = block.get("title")
+    if title:
+        parts.append(f"<h2>{escape(title)}</h2>")
+
+    for name, value in fields:
+        if not value or not value.strip():
+            continue
+        rendered = _inline_media(_reveal_clozes(value), media)
+        parts.append(
+            f'<section class="note-field">'
+            f'<h3 class="field-name">{escape(name)}</h3>'
+            f"<div>{rendered}</div></section>"
+        )
+    return "\n".join(parts)
