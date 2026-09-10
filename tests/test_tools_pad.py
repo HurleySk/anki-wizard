@@ -87,3 +87,19 @@ def test_promote_pad_rejects_a_traversing_name(workspace):
 def test_render_pad_reports_the_viewer_it_used(workspace):
     result = render_pad([{"type": "prose", "text": "x"}], paths=workspace, viewer="none")
     assert (result["viewer"], result["opened"]) == ("none", False)
+
+
+def test_render_pad_embeds_an_animation(workspace):
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib.animation import FuncAnimation
+    from matplotlib.figure import Figure
+
+    fig = Figure(figsize=(2, 2))
+    (line,) = fig.add_subplot(1, 1, 1).plot([0, 1], [0, 1])
+    anim = FuncAnimation(fig, lambda k: (line,), frames=2, blit=True)
+
+    render_pad(
+        [{"type": "animation", "animation": anim}], paths=workspace, viewer="none"
+    )
+    assert "function Animation" in workspace.pad_file().read_text()

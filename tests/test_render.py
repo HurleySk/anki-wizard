@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from anki_wizard.render import render_html
@@ -145,6 +147,102 @@ def test_figure_without_a_caption_omits_the_element():
     # is A-Za-z0-9+/=, which cannot contain "<", so this can't false-positive.
     html = render_html([{"type": "figure", "figure": _a_figure()}])
     assert "<figcaption>" not in html
+
+
+def _an_animation(frames=3):
+    """Build a small animation without requiring a display."""
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib.animation import FuncAnimation
+    from matplotlib.figure import Figure
+
+    fig = Figure(figsize=(3, 2))
+    (line,) = fig.add_subplot(1, 1, 1).plot([0, 1, 2], [0, 1, 4])
+
+    def update(k):
+        line.set_ydata([0, k, 4])
+        return (line,)
+
+    return FuncAnimation(fig, update, frames=frames, interval=50, blit=True)
+
+
+def test_animation_is_embedded_with_its_player():
+    """Self-contained, like a figure: frames are data URIs and the player is
+    inline script. matplotlib's export also links an icon font from a CDN;
+    the one "http" the page may carry is the MathJax script in the head, so
+    the count pins the icon-font link as removed.
+    """
+    html = render_html([{"type": "animation", "animation": _an_animation()}])
+    assert "data:image/png;base64," in html
+    assert "function Animation" in html
+    assert html.count("http") == 1
+    assert "font-awesome" not in html
+
+
+def test_animation_controls_show_text_without_the_icon_font():
+    html = render_html([{"type": "animation", "animation": _an_animation()}])
+    assert "fa fa-" not in html
+    assert "<i " not in html
+    # Solid triangles play, hollow ones step, each in both directions.
+    for glyph in "▶◀▷◁":
+        assert glyph in html
+
+
+def test_two_animations_on_one_page_do_not_collide():
+    html = render_html([
+        {"type": "animation", "animation": _an_animation()},
+        {"type": "animation", "animation": _an_animation()},
+    ])
+    ids = re.findall(r'id="(_anim_slider[0-9a-f]+)"', html)
+    assert len(ids) == 2
+    assert ids[0] != ids[1]
+
+
+def test_the_same_animation_twice_still_gets_two_working_players():
+    """matplotlib caches the exported HTML on the Animation, ids included.
+    Rendered twice as-is, the second player's controls would drive the
+    first one's image and its own would stay blank.
+    """
+    anim = _an_animation()
+    html = render_html([
+        {"type": "animation", "animation": anim},
+        {"type": "animation", "animation": anim},
+    ])
+    ids = re.findall(r'id="(_anim_img[0-9a-f]+)"', html)
+    assert len(ids) == 2
+    assert ids[0] != ids[1]
+
+
+def test_animation_caption_is_rendered_and_escaped():
+    html = render_html([
+        {"type": "animation", "animation": _an_animation(), "caption": "n < 30"}
+    ])
+    assert "<figcaption>n &lt; 30</figcaption>" in html
+
+
+def test_animation_without_a_caption_omits_the_element():
+    html = render_html([{"type": "animation", "animation": _an_animation()}])
+    assert "<figcaption>" not in html
+
+
+def test_animation_block_without_an_animation_is_refused():
+    with pytest.raises(KeyError):
+        render_html([{"type": "animation"}])
+
+
+def test_oversized_animation_is_refused_with_advice():
+    """Frames are inlined, so a long or large animation makes a page that
+    takes tens of seconds to open. Guarding the output size rather than the
+    frame count keeps the guard honest about what actually hurts.
+    """
+
+    class Huge:
+        def to_jshtml(self):
+            return "x" * (9 * 1024 * 1024)
+
+    with pytest.raises(ValueError, match="(?i)frames"):
+        render_html([{"type": "animation", "animation": Huge()}])
+
 
 
 def test_markup_in_prose_is_refused():

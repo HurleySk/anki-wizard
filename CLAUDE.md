@@ -199,6 +199,27 @@ Prefer a `steps` block over prose for a derivation, and use each step's `why` to
 name the justification. A derivation whose steps are unjustified teaches the
 manipulation without the reason, which is the failure mode the pad exists to fix.
 
+**An `animation` block is for when the motion is the lesson.** It takes a
+matplotlib `FuncAnimation` the way `figure` takes a Figure, and renders with a
+play, pause, step, and scrub bar. Use it when a quantity changes with a
+parameter or with \(n\) and the reader needs to watch it change: sample means
+tightening as \(n\) grows, a density reshaping as its parameter moves, Taylor
+polynomials climbing in degree. A figure is enough when one still says it;
+three panels of a figure are enough when three stills say it. The canonical
+case is the CLT sweep: draw standardized sample means from a skewed parent,
+histogram them for each \(n\), overlay the standard normal density, and let
+the frames step through \(n\). The scrub bar is what lets the reader stop at
+the \(n\) where the bell arrives, which is the thing the lecture asserts and
+the exam asks about.
+
+Frames are inlined at roughly 17 KB each, so 30 to 60 frames is the right
+range; the renderer refuses a page over 8 MB. Build the animation on a
+`matplotlib.figure.Figure(layout="constrained")`, not `pyplot`: no window is
+opened, and the export does not crop to a tight bounding box the way `figure`
+does, so without constrained layout an axis label is clipped off the bottom.
+Set `interval` on the animation for playback speed; the same Animation object
+may appear more than once on a page.
+
 ## The why field
 
 Cards have an optional third field, `why`, for the reasoning behind the answer.

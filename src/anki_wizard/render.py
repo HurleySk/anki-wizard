@@ -12,6 +12,7 @@ The page uses the same MathJax delimiters as the cards -- \\(...\\) and \\[...\\
 import base64
 import io
 import re
+import uuid
 from html import escape
 from pathlib import Path
 
@@ -119,6 +120,8 @@ def _render_block(block: dict) -> str:
         return _render_image(block)
     if kind == "figure":
         return _render_figure(block)
+    if kind == "animation":
+        return _render_animation(block)
     if kind == "note":
         return _render_note(block)
     raise ValueError(f"unknown block type: {kind!r}")
@@ -246,6 +249,65 @@ def _render_figure(block: dict) -> str:
         f'<figure><img src="data:image/png;base64,{encoded}" alt="">'
         f"{caption_html}</figure>"
     )
+
+
+# matplotlib's HTML player links an icon font from a CDN for its eight control
+# buttons and nothing else. The page is meant to be one artifact that opens
+# offline (every image is a data URI for that reason), and a control bar that
+# renders blank without network is not worth a third-party stylesheet, so the
+# link goes and each icon becomes a character the reader can see.
+_ICON_FONT_LINK = re.compile(r'<link\b[^>]*font-awesome[^>]*>', re.IGNORECASE)
+_ICON = re.compile(r'<i class="fa (fa-[a-z-]+)( fa-flip-horizontal)?"></i>')
+_ICON_GLYPHS = {
+    "fa-fast-backward": "\u23ee",  # skip to start
+    "fa-step-backward": "\u25c1",  # hollow: steps one frame, does not play
+    "fa-pause": "\u23f8",
+    "fa-play": "\u25b6",
+    "fa-step-forward": "\u25b7",
+    "fa-fast-forward": "\u23ed",  # skip to end
+    "fa-minus": "\u2212",  # slower
+    "fa-plus": "+",  # faster
+}
+
+# Frames are inlined as PNGs at roughly 17 KB each, so the page grows linearly
+# with frame count and a long animation makes a pad that takes tens of seconds
+# to open. The guard is on the output rather than on a frame count because the
+# Animation object does not expose its length uniformly, and the bytes are
+# what actually hurt.
+_MAX_ANIMATION_BYTES = 8 * 1024 * 1024
+
+# matplotlib caches the exported HTML on the Animation, so the same object
+# rendered twice on one page arrives with the same element ids, and the second
+# player's controls drive the first one's image. Every element, variable, and
+# id in the export shares one hex token, so re-minting the token is the fix.
+_PLAYER_TOKEN = re.compile(r'id="_anim_img([0-9a-f]{32})"')
+
+
+def _icon_glyph(match: re.Match) -> str:
+    # The reverse-play button is the play icon flipped, so mirror the glyph.
+    if match.group(2):
+        return "\u25c0" if match.group(1) == "fa-play" else match.group(1)
+    return _ICON_GLYPHS.get(match.group(1), match.group(1))
+
+
+def _render_animation(block: dict) -> str:
+    player = block["animation"].to_jshtml()
+    if len(player) > _MAX_ANIMATION_BYTES:
+        raise ValueError(
+            f"animation renders to {len(player) // (1024 * 1024)} MB, over the "
+            f"{_MAX_ANIMATION_BYTES // (1024 * 1024)} MB limit; use fewer "
+            "frames, a smaller figure, or a lower dpi"
+        )
+
+    token = _PLAYER_TOKEN.search(player)
+    if token:
+        player = player.replace(token.group(1), uuid.uuid4().hex)
+    player = _ICON_FONT_LINK.sub("", player)
+    player = _ICON.sub(_icon_glyph, player)
+
+    caption = block.get("caption")
+    caption_html = f"\n<figcaption>{escape(caption)}</figcaption>" if caption else ""
+    return f"<figure>{player}{caption_html}</figure>"
 
 
 # Anki writes media as a plain filename in the field's HTML, which resolves
