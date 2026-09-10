@@ -323,8 +323,12 @@ def test_note_blocks_fetch_a_repeated_file_once():
     repeated = {
         **OUT_OF_ORDER_NOTE,
         "fields": {
-            "Front": {"value": '<img src="a.png"> front', "order": 0},
-            "Back": {"value": '<img src="a.png"> back', "order": 1},
+            # b before a, and b repeated: the fetch order must follow the
+            # note's own fields, which is the other half of why this uses
+            # dict.fromkeys rather than a set.
+            "Front": {"value": '<img src="c.png"> front', "order": 0},
+            "Back": {"value": '<img src="a.png"> <img src="b.png"> <img src="c.png">',
+                     "order": 1},
         },
     }
     with FakeAnki() as fake:
@@ -337,6 +341,43 @@ def test_note_blocks_fetch_a_repeated_file_once():
 
         blocks = note_blocks(42, client)
 
-    assert blocks[0]["media"] == {"a.png": b"PNGDATA"}
+    assert set(blocks[0]["media"]) == {"a.png", "b.png", "c.png"}
     fetches = [r for r in fake.requests if r["action"] == "retrieveMediaFile"]
-    assert len(fetches) == 1
+    # c, a, b is the field order and is neither sorted nor reverse-sorted.
+    assert [r["params"]["filename"] for r in fetches] == ["c.png", "a.png", "b.png"]
+
+
+def test_note_blocks_keep_a_zero_byte_file_rather_than_calling_it_missing():
+    """An empty file is falsy but real; dropping it misreports a bad sync.
+
+    anki.py draws this distinction deliberately, and this is the layer where
+    the falsy-bytes mistake is the natural one to make.
+    """
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [CLOZE_NOTE])
+        fake.set_response("cardsInfo", [{"deckName": "D"}])
+        fake.set_response("retrieveMediaFile", "")
+        client = AnkiClient(fake.url)
+
+        blocks = note_blocks(1739985246842, client)
+
+    assert blocks[0]["media"] == {"paste-abc.jpg": b""}
+    assert blocks[0]["unresolved_media"] == []
+
+
+def test_note_blocks_name_the_media_they_could_not_load():
+    """"no images" and "three failed" are otherwise the same empty dict.
+
+    The pad shows a broken <img> to whoever reads it, but the caller
+    describing this note to the user only sees what is returned here.
+    """
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [CLOZE_NOTE])
+        fake.set_response("cardsInfo", [{"deckName": "D"}])
+        fake.set_response("retrieveMediaFile", False)
+        client = AnkiClient(fake.url)
+
+        blocks = note_blocks(1739985246842, client)
+
+    assert blocks[0]["media"] == {}
+    assert blocks[0]["unresolved_media"] == ["paste-abc.jpg"]

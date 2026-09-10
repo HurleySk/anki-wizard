@@ -199,6 +199,7 @@ def note_blocks(note_id: int, client: AnkiClient) -> list[dict]:
     note = read_note(note_id, client)
 
     media: dict[str, bytes] = {}
+    unresolved: list[str] = []
     # dict.fromkeys, not set(...): a note referencing one image on both its
     # front and back (read_note's media list is not de-duplicated) must be
     # fetched once, and the fetch order should still match the note's own
@@ -207,6 +208,7 @@ def note_blocks(note_id: int, client: AnkiClient) -> list[dict]:
         try:
             data = client.retrieve_media_file(filename)
         except AnkiError:
+            unresolved.append(filename)
             # A single corrupt or truncated file must not blank the whole
             # pad -- the pad's job is to show the user the card, and a card
             # missing one image is far better than no pad at all. render.py's
@@ -214,15 +216,30 @@ def note_blocks(note_id: int, client: AnkiClient) -> list[dict]:
             # rather than hiding it, so skipping the file here degrades to a
             # visible broken image with its filename intact, not silence.
             continue
-        if data is not None:
+        if data is None:
+            unresolved.append(filename)
+        else:
             media[filename] = data
 
     return [
         {
             "type": "note",
+            # The deck path is the only human-readable locator a note has: a
+            # note has no name, and its id says nothing to a reader. Empty for
+            # a cardless note, which _render_note drops rather than emitting a
+            # blank heading.
             "title": note["deck"],
             "fields": note["ordered_fields"],
             "media": media,
+            # Named here rather than only on the page. The rendered pad shows a
+            # broken <img> carrying the filename, which tells a human reading
+            # it -- but the caller describing this note to the user sees only
+            # what is returned, and "no images" and "three failed to load" are
+            # otherwise the same empty dict. Kept inside the block rather than
+            # added as a prose block: prose refuses markup, and a filename
+            # holding "&amp;" would raise and take down the very pad this
+            # reporting exists to preserve.
+            "unresolved_media": unresolved,
         }
     ]
 
