@@ -152,10 +152,13 @@ class AnkiClient:
         """Write named fields on any note, whatever its note type.
 
         update_note_fields writes Front/Back/Why, which is right for cards this
-        harness authored and wrong for every other note in the collection --
-        sending those names to a cloze note either errors or blanks its real
-        content. This one sends only what the caller names, so the caller is
-        responsible for having read the note's real field names first.
+        harness authored and wrong for every other note in the collection.
+        AnkiConnect skips a field name the note does not have rather than
+        rejecting it, so sending those names to a cloze note reports success
+        and changes nothing -- a silent no-op is worse than an error, because
+        the caller records an edit that never happened. This one sends only
+        what the caller names, so the caller is responsible for having read
+        the note's real field names first.
         """
         if not fields:
             raise AnkiError("no fields to update; refusing an empty write")
