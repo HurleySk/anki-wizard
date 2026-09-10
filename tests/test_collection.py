@@ -10,8 +10,8 @@ CLOZE_NOTE = {
     "noteId": 1739985246842,
     "modelName": "Cloze Overlapping",
     "tags": ["6.041", "L3_Independence"],
-    # cards_of_note reads this key off notesInfo rather than making a second
-    # call, so a fixture without it reports the note as having no deck.
+    # search and read take card ids off the notesInfo record rather than
+    # making a second call, so a fixture without this key reports no deck.
     "cards": [1],
     "fields": {
         "Text": {"value": "A {{c1::network}} connects \\(A\\) and \\(B\\).", "order": 0},
