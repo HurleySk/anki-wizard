@@ -55,6 +55,19 @@ def test_session_pad_writes_the_page(tmp_path):
     assert "from a session" in s.paths.pad_file().read_text()
 
 
+def test_session_pad_cards_shows_proposals_as_notes(tmp_path):
+    (tmp_path / "config.yaml").write_text(yaml.safe_dump({"pad_viewer": "none"}))
+    s = Session(root=tmp_path)
+    s.propose("pset-3", [{"front": "F <b>x</b>", "back": "B"}], section_id=None)
+    s.review("pset-3", {"c-0001": "reject"})
+    s.propose("pset-3", [{"front": "F2", "back": "B2"}], section_id=None)
+    s.pad_cards("pset-3", extra=[{"type": "prose", "text": "trailing note"}])
+    page = s.paths.pad_file().read_text()
+    assert "F2" in page and "trailing note" in page
+    assert "c-0001" not in page  # rejected: not a proposal any more
+    assert "<b>x</b>" not in page
+
+
 def test_session_keep_promotes_the_pad(tmp_path):
     s = Session(root=tmp_path)
     s.pad([{"type": "prose", "text": "worth keeping"}], viewer="none")

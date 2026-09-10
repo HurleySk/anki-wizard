@@ -133,6 +133,16 @@ and its cloze deletions revealed. What the pad is not is a deck browser — Anki
 reviews cards, and a second, worse reviewer is not wanted. Working through
 material is in scope; paging through it is not.
 
+**Cards go on the pad through `pad_cards`, never through prose blocks.**
+A proposal has HTML fields with math in them, and the review page must show
+them the way Anki will. `pad_cards(slug)` renders every proposed card in a
+slug as a `note` block, with its id, state, and lecture as the heading and
+each field labelled; `ids=` and `state=` narrow it. Building the same page
+out of prose lines does not work -- prose is escaped, there is no heading
+block, and a separator typed into a prose line (`---- c-0001 ----`) is what
+the reader then has to look past. If the page needs a heading the pad does
+not offer, that is a missing block type to add, not a string to improvise.
+
 The pad is ephemeral by design. Do not treat replacing it as data loss, and do
 not promote one to a note on the user's behalf: keeping is their call, the same
 way approving a card is.

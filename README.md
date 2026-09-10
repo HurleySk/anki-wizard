@@ -46,6 +46,7 @@ Optionally create `config.yaml`:
 | `read_note(note_id, client)` | One note in full: every field by its real name, its deck, tags, and media. |
 | `list_decks(client)` | Every deck and subdeck in the collection. |
 | `note_blocks(note_id, client)` | Pad blocks showing a note, with its media fetched and inlined. |
+| `card_blocks(slug, paths, ids, state)` | Pad blocks showing ledger cards, for putting proposals in front of the user. |
 | `edit_note(note_id, changes, client, paths, force)` | Edit a note this harness did not create, behind field-name and cloze guards. |
 
 `Session` wraps all of these, reading `config.yaml` once so you do not pass
@@ -62,6 +63,7 @@ Optionally create `config.yaml`:
     s.push("lecture")                      # needs Anki running
     s.search('deck:"Intro to Probability" network')
     s.pad_note(1739985246842)              # the card, rendered, with its images
+    s.pad_cards("lecture")                 # the slug's proposals, rendered for review
     s.edit_note(1739985246842, {"Answer": "..."})
 
 ## Cards from conversation

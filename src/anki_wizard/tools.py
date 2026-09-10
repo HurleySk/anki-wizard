@@ -321,6 +321,52 @@ def render_pad(
     }
 
 
+def card_blocks(
+    slug: str,
+    paths: Paths,
+    ids: list[str] | None = None,
+    state: str | None = None,
+) -> list[dict]:
+    """Pad blocks showing ledger cards, one ``note`` block per card.
+
+    This is how a proposal goes in front of the user for review. Card fields
+    are HTML with MathJax, the same as an Anki note's, so they get the note
+    renderer: headings, per-field labels, markup and math left intact. Hand-
+    rolling the same layout out of prose blocks does not work -- prose is
+    escaped, there is no heading block, and a separator typed into a prose
+    line is exactly the kind of thing the reader then has to look past.
+
+    Adopted entries are skipped: they carry no front or back, only a pointer
+    to a note this harness did not write, and note_blocks is how to show one.
+    """
+    cards = cards_only(load_ledger(paths.ledger_file(slug)))
+    by_id = {c.id: c for c in cards}
+    if ids is not None:
+        missing = [i for i in ids if i not in by_id]
+        if missing:
+            raise KeyError(f"no such card in {slug!r}: {', '.join(missing)}")
+        cards = [by_id[i] for i in ids]
+    if state is not None:
+        cards = [c for c in cards if c.state == state]
+
+    blocks = []
+    for card in cards:
+        # The id is how the user will name the card back to us in a review
+        # decision, so it leads; state and lecture are what they are deciding.
+        title = " \u00b7 ".join(
+            part for part in (card.id, card.state, card.lecture) if part
+        )
+        fields = [("Front", card.front), ("Back", card.back)]
+        if card.why:
+            fields.append(("Why", card.why))
+        # Tags are lowercase-hyphenated by convention, so emitting them into
+        # an unescaped HTML field is safe; sorted so two cards with the same
+        # tags read the same.
+        fields.append(("Tags", " ".join(sorted(card.tags))))
+        blocks.append({"type": "note", "title": title, "fields": fields})
+    return blocks
+
+
 def promote_pad(name: str, paths: Paths) -> dict:
     """Keep the current pad as a named note.
 

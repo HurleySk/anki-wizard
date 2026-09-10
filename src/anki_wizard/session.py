@@ -105,6 +105,22 @@ class Session:
         blocks = collection.note_blocks(note_id, self.client)
         return self.pad(blocks + list(extra or []))
 
+    def pad_cards(
+        self,
+        slug: str,
+        ids: list[str] | None = None,
+        state: str | None = "proposed",
+        extra: list[dict] | None = None,
+    ) -> dict:
+        """Put ledger cards on the pad for review, proposals by default.
+
+        The counterpart of pad_note for cards this harness wrote. Use it
+        rather than assembling front and back out of prose blocks: the fields
+        are HTML and only the note renderer shows them as the card will look.
+        """
+        blocks = tools.card_blocks(slug, paths=self.paths, ids=ids, state=state)
+        return self.pad(blocks + list(extra or []), title=f"Cards: {slug}")
+
     def edit_note(self, note_id: int, changes: dict, force: bool = False) -> dict:
         return collection.edit_note(
             note_id, changes, self.client, paths=self.paths, force=force

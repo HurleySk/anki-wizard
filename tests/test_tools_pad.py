@@ -103,3 +103,80 @@ def test_render_pad_embeds_an_animation(workspace):
         [{"type": "animation", "animation": anim}], paths=workspace, viewer="none"
     )
     assert "function Animation" in workspace.pad_file().read_text()
+
+
+# --- card_blocks: ledger cards on the pad ---------------------------------
+
+
+@pytest.fixture
+def proposals(workspace):
+    from anki_wizard.tools import propose_cards
+
+    propose_cards(
+        "pset-3",
+        [
+            {"front": "F1 \\(x^2\\)", "back": "B1<br><b>bold</b>", "why": "W1",
+             "tags": ["clt"], "lecture": "Unit I::L02"},
+            {"front": "F2", "back": "B2"},
+        ],
+        section_id=None,
+        paths=workspace,
+    )
+    return workspace
+
+
+def test_card_blocks_are_note_blocks_with_the_card_fields(proposals):
+    from anki_wizard.tools import card_blocks
+
+    blocks = card_blocks("pset-3", paths=proposals)
+    assert [b["type"] for b in blocks] == ["note", "note"]
+    first = blocks[0]
+    assert first["fields"][:3] == [
+        ("Front", "F1 \\(x^2\\)"),
+        ("Back", "B1<br><b>bold</b>"),
+        ("Why", "W1"),
+    ]
+    assert "c-0001" in first["title"]
+    assert "proposed" in first["title"]
+    assert "Unit I::L02" in first["title"]
+
+
+def test_card_blocks_omit_an_empty_why(proposals):
+    from anki_wizard.tools import card_blocks
+
+    second = card_blocks("pset-3", paths=proposals)[1]
+    assert not any(name == "Why" for name, _ in second["fields"])
+
+
+def test_card_blocks_carry_tags_as_a_field(proposals):
+    from anki_wizard.tools import card_blocks
+
+    first = card_blocks("pset-3", paths=proposals)[0]
+    assert ("Tags", "clt") in first["fields"]
+
+
+def test_card_blocks_filter_by_id_and_state(proposals):
+    from anki_wizard.tools import card_blocks, review_cards
+
+    review_cards("pset-3", {"c-0002": "reject"}, paths=proposals)
+    assert [b["title"] for b in card_blocks("pset-3", paths=proposals, state="proposed")] \
+        == [b["title"] for b in card_blocks("pset-3", paths=proposals, ids=["c-0001"])]
+    assert len(card_blocks("pset-3", paths=proposals, state="rejected")) == 1
+
+
+def test_card_blocks_reject_an_unknown_id(proposals):
+    from anki_wizard.tools import card_blocks
+
+    with pytest.raises(KeyError, match="c-0099"):
+        card_blocks("pset-3", paths=proposals, ids=["c-0099"])
+
+
+def test_card_blocks_render_html_fields_unescaped(proposals):
+    """The whole point: a card field is HTML, so <b> and \\( must reach the page intact."""
+    from anki_wizard.tools import card_blocks
+
+    render_pad(card_blocks("pset-3", paths=proposals), paths=proposals, viewer="none")
+    page = proposals.pad_file().read_text()
+    assert "<b>bold</b>" in page
+    assert "\\(x^2\\)" in page
+    assert "&lt;b&gt;" not in page
