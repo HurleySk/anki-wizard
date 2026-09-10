@@ -210,6 +210,16 @@ the point. Leave it empty otherwise. **An empty why is better than a filler
 why:** once the field routinely carries nothing worth reading, it stops being
 read at all, and the cards that genuinely need one lose their voice.
 
+**A why that asserts is not yet a why.** "Independent variances add" or "a
+linear combination of Gaussians is Gaussian" is another fact to memorise, not
+a reason. When the why leans on a step like that, carry the step's own short
+derivation: expand the square and show the cross term vanish, multiply the
+MGFs, substitute into the definition of variance. Two or three lines of
+displayed math is the right size — enough that the reader could reproduce the
+result, not a textbook section. The step that gets asserted without proof is
+usually the one that gets misapplied under exam pressure, which is exactly the
+gap the field exists to close.
+
 Set it at proposal time alongside `front` and `back`, or add one later with
 `revise_card`.
 
