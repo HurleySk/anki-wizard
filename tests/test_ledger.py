@@ -130,7 +130,7 @@ def test_malformed_ledger_names_the_file_and_entry(tmp_path):
     path = tmp_path / "cards" / "s.yaml"
     path.parent.mkdir(parents=True)
     path.write_text("- id: c-0001\n  front: F\n")  # no back, no source
-    with pytest.raises(ValueError, match="entry 0 is not a readable card"):
+    with pytest.raises(ValueError, match="entry 0 is not readable"):
         load_ledger(path)
 
 

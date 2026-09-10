@@ -3,6 +3,9 @@
 The ledger is the source of truth. Every card lives here from the moment it is
 proposed, and it records provenance and the Anki note id so a card can be
 revised later without losing its review history.
+
+It also holds adopted notes -- references to notes this harness did not author,
+kept so edits to them leave the same trail. A `kind` key tells the two apart.
 """
 
 from dataclasses import asdict, replace
@@ -12,73 +15,117 @@ from pathlib import Path
 import yaml
 
 from anki_wizard.atomic import locked, write_text_atomic
-from anki_wizard.models import Card, CardSource
+from anki_wizard.models import AdoptedNote, Card, CardSource
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def record(card: Card, action: str, **changes) -> Card:
-    """Return a copy of `card` with `changes` applied and `action` in its history.
+def record(entry: Card | AdoptedNote, action: str, **changes) -> Card | AdoptedNote:
+    """Return a copy of `entry` with `changes` applied and `action` in its history.
 
-    Every change to a card goes through here so the history stays an audit
-    trail: nothing changes a field without saying what happened and when.
+    Every change to a ledger entry goes through here so the history stays an
+    audit trail: nothing changes a field without saying what happened and when.
+    Adopted notes get the same treatment as authored cards -- both are
+    dataclasses carrying a history list, which is all this needs.
     """
     return replace(
-        card, history=card.history + [{"at": _now(), "action": action}], **changes
+        entry, history=entry.history + [{"at": _now(), "action": action}], **changes
     )
 
 
-def load_ledger(path: Path) -> list[Card]:
+def _load_card(r: dict) -> Card:
+    return Card(
+        id=r["id"],
+        front=r["front"],
+        back=r["back"],
+        source=CardSource(**r["source"]),
+        why=r.get("why"),
+        lecture=r.get("lecture"),
+        state=r.get("state", "proposed"),
+        tags=r.get("tags", []),
+        anki_note_id=r.get("anki_note_id"),
+        history=r.get("history", []),
+    )
+
+
+def _load_adopted(r: dict) -> AdoptedNote:
+    return AdoptedNote(
+        note_id=r["note_id"],
+        model=r["model"],
+        deck=r["deck"],
+        fields=list(r["fields"]),
+        tags=r.get("tags", []),
+        history=r.get("history", []),
+    )
+
+
+def load_ledger(path: Path) -> list[Card | AdoptedNote]:
+    """Every entry in a ledger, authored cards and adopted notes alike.
+
+    `kind` defaults to "card" because every ledger written before adoption
+    existed has no such key, and those must keep loading untouched.
+    """
     if not path.exists():
         return []
     raw = yaml.safe_load(path.read_text()) or []
-    cards: list[Card] = []
+    entries: list[Card | AdoptedNote] = []
     for position, r in enumerate(raw):
         try:
-            cards.append(
-                Card(
-                    id=r["id"],
-                    front=r["front"],
-                    back=r["back"],
-                    source=CardSource(**r["source"]),
-                    why=r.get("why"),
-                    lecture=r.get("lecture"),
-                    state=r.get("state", "proposed"),
-                    tags=r.get("tags", []),
-                    anki_note_id=r.get("anki_note_id"),
-                    history=r.get("history", []),
-                )
-            )
-        except (KeyError, TypeError) as exc:
+            kind = r.get("kind", "card")
+            if kind == "adopted":
+                entries.append(_load_adopted(r))
+            elif kind == "card":
+                entries.append(_load_card(r))
+            else:
+                raise ValueError(f"unknown kind {kind!r}")
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
             # The ledger is the source of truth and is meant to be readable, so
             # it gets hand-edited. Say which file and which entry is wrong.
             raise ValueError(
-                f"{path}: entry {position} is not a readable card ({exc})"
+                f"{path}: entry {position} is not readable ({exc})"
             ) from exc
 
-    seen: dict[str, int] = {}
-    for position, card in enumerate(cards):
-        if card.id in seen:
-            # Lookup takes the first match, so a repeat makes the second copy
-            # unreachable: edits and pushes would silently land on the first.
+    _reject_duplicates(path, entries)
+    return entries
+
+
+def _reject_duplicates(path: Path, entries: list[Card | AdoptedNote]) -> None:
+    """Lookup takes the first match, so a repeat makes the second unreachable.
+
+    Edits and pushes would silently land on the first copy. Card ids and note
+    ids are separate namespaces, so the key carries which one it came from.
+    """
+    seen: dict[object, int] = {}
+    for position, entry in enumerate(entries):
+        key = ("card", entry.id) if isinstance(entry, Card) else ("note", entry.note_id)
+        shown = entry.id if isinstance(entry, Card) else entry.note_id
+        if key in seen:
             raise ValueError(
-                f"{path}: entries {seen[card.id]} and {position} share the id "
-                f"{card.id!r}; ids must be unique"
+                f"{path}: entries {seen[key]} and {position} share the id "
+                f"{shown!r}; ids must be unique"
             )
-        seen[card.id] = position
-    return cards
+        seen[key] = position
 
 
-def save_ledger(path: Path, cards: list[Card]) -> None:
+def _as_row(entry: Card | AdoptedNote) -> dict:
+    kind = "card" if isinstance(entry, Card) else "adopted"
+    # Written even for cards, which never needed it, so a hand-edited ledger
+    # reads unambiguously rather than relying on the back-compat default.
+    return {"kind": kind, **asdict(entry)}
+
+
+def save_ledger(path: Path, entries: list[Card | AdoptedNote]) -> None:
     write_text_atomic(
         path,
-        yaml.safe_dump([asdict(c) for c in cards], sort_keys=False, allow_unicode=True),
+        yaml.safe_dump(
+            [_as_row(e) for e in entries], sort_keys=False, allow_unicode=True
+        ),
     )
 
 
-def index_of(cards: list[Card], card_id: str, slug: str) -> int:
+def index_of(cards: list[Card | AdoptedNote], card_id: str, slug: str) -> int:
     """The position of `card_id` in the ledger, or ValueError naming the slug.
 
     load_ledger rejects duplicate ids, so the first match is the only match.
@@ -86,14 +133,18 @@ def index_of(cards: list[Card], card_id: str, slug: str) -> int:
     lock, and re-reading would defeat it.
     """
     for index, card in enumerate(cards):
-        if card.id == card_id:
+        # Adopted notes have no card id, and a ledger can now hold them.
+        if isinstance(card, Card) and card.id == card_id:
             return index
     raise ValueError(f"no card {card_id!r} in ledger for {slug!r}")
 
 
-def next_card_id(cards: list[Card]) -> str:
+def next_card_id(cards: list[Card | AdoptedNote]) -> str:
+    """The next free `c-NNNN`. Adopted notes carry Anki's ids and are skipped."""
     highest = 0
     for card in cards:
+        if not isinstance(card, Card):
+            continue
         try:
             highest = max(highest, int(card.id.split("-")[1]))
         except (IndexError, ValueError):
@@ -186,3 +237,24 @@ def edit_card(
     return record(
         card, "edited", front=new_front, back=new_back, why=new_why, tags=new_tags
     )
+
+
+def adopt_note(
+    path: Path, note_id: int, model: str, deck: str, fields: list[str]
+) -> AdoptedNote:
+    """Ensure a ledger entry exists for a note this harness did not create.
+
+    Called on the first edit of a foreign note, and harmlessly again on every
+    later one: adoption is a fact about the note, not an event to repeat.
+    """
+    with locked(path):
+        entries = load_ledger(path)
+        for entry in entries:
+            if isinstance(entry, AdoptedNote) and entry.note_id == note_id:
+                return entry
+        adopted = record(
+            AdoptedNote(note_id=note_id, model=model, deck=deck, fields=list(fields)),
+            "adopted",
+        )
+        save_ledger(path, entries + [adopted])
+    return adopted
