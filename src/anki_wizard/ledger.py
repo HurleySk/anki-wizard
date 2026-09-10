@@ -51,6 +51,12 @@ def _load_card(r: dict) -> Card:
 
 
 def _load_adopted(r: dict) -> AdoptedNote:
+    if not isinstance(r["fields"], list):
+        # "fields: Text" is the natural way to hand-write a single field, and
+        # list() would spell it into four bogus names rather than complain.
+        # An edit is checked against these before it reaches Anki, so a garbled
+        # value here weakens that check instead of failing it.
+        raise TypeError(f"fields must be a list, not {type(r['fields']).__name__}")
     return AdoptedNote(
         note_id=r["note_id"],
         model=r["model"],

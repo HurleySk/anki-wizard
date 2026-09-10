@@ -131,6 +131,24 @@ def test_an_unreadable_adopted_entry_names_its_position(tmp_path):
         load_ledger(path)
 
 
+def test_a_single_field_written_as_a_string_is_refused(tmp_path):
+    """Refused rather than splatted: list("Text") is four bogus field names.
+
+    Writing one field without the list is the obvious hand-edit, and these
+    names are what an edit is checked against before it reaches Anki, so
+    accepting the garbled form would weaken that check silently.
+    """
+    path = tmp_path / "scalar-fields.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            [{"kind": "adopted", "note_id": 1, "model": "M", "deck": "D",
+              "fields": "Text"}]
+        )
+    )
+    with pytest.raises(ValueError, match="entry 0"):
+        load_ledger(path)
+
+
 def test_an_unknown_kind_is_rejected(tmp_path):
     path = tmp_path / "odd.yaml"
     path.write_text(yaml.safe_dump([{"kind": "sketch", "id": "c-0001"}]))
