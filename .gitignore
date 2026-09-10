@@ -22,3 +22,6 @@ tests/fixtures/*.pdf
 
 # Study pad (ephemeral working surface, and its server pidfile)
 pad/
+
+# Git worktrees for isolated feature work
+.worktrees/
