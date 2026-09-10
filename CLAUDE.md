@@ -115,10 +115,23 @@ Do not silently pick one.
 
 ## The study pad
 
-`render_pad` is for working mathematics with the user, not for previewing cards.
-Reach for it when a question needs rendered formulas, a derivation, or a plot —
-terminal LaTeX is unreadable, and that unreadability is the whole reason the pad
-exists.
+`render_pad` is for working mathematics with the user. **If the answer you are
+about to write contains `\(`, `\[`, or more than one step of derivation, it
+goes on the pad** — no exceptions for questions that feel like lookups rather
+than teaching. Terminal LaTeX is unreadable, and the reader cannot tell which
+activity you thought you were engaged in.
+
+That trigger is deliberately about the *output*, not the activity. An earlier
+version of this rule was written around "working a derivation with the user",
+and it reliably failed to fire when an agent was doing something that felt like
+retrieval — looking a card up, answering a question — and then emitted three
+lines of LaTeX into the terminal anyway. Match on what you are about to write.
+
+The pad shows whatever is useful, which includes a card's contents when a card
+is what the user asked about: `note_blocks` renders one with its media inlined
+and its cloze deletions revealed. What the pad is not is a deck browser — Anki
+reviews cards, and a second, worse reviewer is not wanted. Working through
+material is in scope; paging through it is not.
 
 The pad is ephemeral by design. Do not treat replacing it as data loss, and do
 not promote one to a note on the user's behalf: keeping is their call, the same
@@ -137,6 +150,32 @@ terminal beside it. Restating the content in chat wastes the reader's attention
 on the unreadable copy and answers the question twice; if something is worth
 saying, it is worth saying on the pad where it renders. A sentence naming what
 the pad holds is enough.
+
+## The wider collection
+
+Not every card in Anki came from here. Shared decks, imported courses, and
+years of hand-made notes are all readable: `search_collection` finds them,
+`read_note` opens one, `list_decks` shows the deck tree, and `note_blocks`
+puts one on the pad with its images.
+
+Use `list_decks` to confirm a deck name rather than trusting a remembered one.
+The rule against inventing a subdeck name is above; this is how to check.
+
+**Editing a note this harness did not author is a different act from revising
+one it did.** A shared deck is work the user may not be able to regenerate, and
+the ledger's usual guarantee — that it is the source of truth — does not hold
+for a note it never created. So:
+
+- Read the note first. `edit_note` needs the real field names, and a name that
+  is not on the note is refused rather than guessed at.
+- Show the diff and get agreement before writing. The tool returns one; put it
+  in front of the user the way a card proposal goes in front of them.
+- Never pass `force=True` on your own judgment. It exists to override the
+  cloze guard, and past that guard an edit deletes cards and their review
+  history irreversibly. That is the user's call, always.
+- Editing adopts the note into `cards/<deck-slug>.yaml` as a reference entry.
+  Adopted entries have no `front`/`back` — they record which note and which
+  fields, never the content.
 
 ## Writing pad blocks
 

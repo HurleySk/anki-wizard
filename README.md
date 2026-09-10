@@ -42,6 +42,11 @@ Optionally create `config.yaml`:
 | `promote_pad(name, paths)` | Keep the current pad as a named note. |
 | `push_to_anki(slug, client, deck, paths)` | Send approved cards to Anki, record note ids, advance the cursor. Cards carrying a lecture go to its subdeck. |
 | `revise_card(slug, card_id, client, paths, ...)` | Edit a card, updating Anki in place if it was already pushed. |
+| `search_collection(query, client, limit)` | Find notes anywhere in the collection, by Anki search syntax. |
+| `read_note(note_id, client)` | One note in full: every field by its real name, its deck, tags, and media. |
+| `list_decks(client)` | Every deck and subdeck in the collection. |
+| `note_blocks(note_id, client)` | Pad blocks showing a note, with its media fetched and inlined. |
+| `edit_note(note_id, changes, client, paths, force)` | Edit a note this harness did not create, behind field-name and cloze guards. |
 
 `Session` wraps all of these, reading `config.yaml` once so you do not pass
 `paths`, `deck`, and page caps by hand:
@@ -55,6 +60,9 @@ Optionally create `config.yaml`:
     s.propose("lecture", [...], section_id="1")
     s.review("lecture", {"c-0001": "approve"})
     s.push("lecture")                      # needs Anki running
+    s.search('deck:"Intro to Probability" network')
+    s.pad_note(1739985246842)              # the card, rendered, with its images
+    s.edit_note(1739985246842, {"Answer": "..."})
 
 ## Cards from conversation
 
@@ -82,7 +90,9 @@ mathematics, and LaTeX source in a terminal is unreadable.
     ])
 
 This writes `pad/pad.html` and opens it. Block types are `prose`, `math`,
-`steps`, and `figure` (a matplotlib figure, embedded).
+`steps`, `figure` (a matplotlib figure, embedded), `image` (bytes or a path,
+embedded), and `note` (an Anki note, its cloze deletions revealed and its media
+inlined).
 
 Set `pad_viewer` in `config.yaml` to choose where it appears:
 
@@ -117,6 +127,28 @@ The pad is **ephemeral**: every render replaces it. When one is worth keeping:
 Or turn it into cards through the normal flow, which is `propose_cards` with a
 topic slug. The pad is a study surface, not a second deck: it does not preview
 cards or browse the ledger, because Anki and the terminal already do those.
+
+## The wider collection
+
+Most of a real collection is not from this harness: shared decks, imported
+courses, notes made by hand over years. Those are readable and workable too.
+
+    s.search('deck:"Intro to Probability" independence')
+    s.note(1739985246842)
+    s.pad_note(1739985246842)
+
+A note this harness did not create can also be corrected. Editing one **adopts**
+it: an entry appears in `cards/<deck-slug>.yaml` holding a reference — note id,
+model, deck, field names, history — and never a copy of its content, so the
+ledger cannot show you something Anki no longer holds.
+
+    s.edit_note(1739985246842, {"Answer": "..."})
+
+Two guards stand in front of every such write. A field name that is not on the
+note is refused, so a typo cannot blank a field or invent one. And an edit that
+removes a cloze deletion is refused, because Anki generates one card per
+deletion and dropping one deletes that card together with its review history;
+`force=True` is the way past it when that is genuinely intended.
 
 ## Lectures and subdecks
 

@@ -7,7 +7,7 @@ config.yaml once and supplies those arguments.
 
 from pathlib import Path
 
-from anki_wizard import tools
+from anki_wizard import collection, tools
 from anki_wizard.anki import AnkiClient
 from anki_wizard.config import load_config
 from anki_wizard.paths import Paths
@@ -85,4 +85,27 @@ class Session:
     def revise(self, slug: str, card_id: str, **edits) -> dict:
         return tools.revise_card(
             slug, card_id, self.client, paths=self.paths, deck=self.config.deck, **edits
+        )
+
+    def search(self, query: str, limit: int = 25) -> dict:
+        return collection.search_collection(query, self.client, limit=limit)
+
+    def note(self, note_id: int) -> dict:
+        return collection.read_note(note_id, self.client)
+
+    def decks(self) -> dict:
+        return collection.list_decks(self.client)
+
+    def pad_note(self, note_id: int, extra: list[dict] | None = None) -> dict:
+        """Render a note on the pad, optionally followed by blocks of your own.
+
+        The card and the working-through belong on one page: the note is what
+        the question is about, and the derivation beside it is the answer.
+        """
+        blocks = collection.note_blocks(note_id, self.client)
+        return self.pad(blocks + list(extra or []))
+
+    def edit_note(self, note_id: int, changes: dict, force: bool = False) -> dict:
+        return collection.edit_note(
+            note_id, changes, self.client, paths=self.paths, force=force
         )

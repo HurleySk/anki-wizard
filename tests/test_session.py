@@ -3,6 +3,7 @@ from pathlib import Path
 import yaml
 
 from anki_wizard.session import Session
+from tests.fake_anki import FakeAnki
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -71,3 +72,15 @@ def test_session_pad_viewer_argument_overrides_config(tmp_path):
     (tmp_path / "config.yaml").write_text("pad_viewer: browser\n")
     s = Session(root=tmp_path)
     assert s.pad([{"type": "prose", "text": "x"}], viewer="none")["viewer"] == "none"
+
+
+def test_session_exposes_the_collection_tools(tmp_path):
+    """Session supplies the client; the tools stay independently callable."""
+    with FakeAnki() as fake:
+        fake.set_response("deckNames", ["Stats", "Default"])
+        (tmp_path / "config.yaml").write_text(
+            f"deck: Stats\nanki_connect_url: {fake.url}\n"
+        )
+        session = Session(root=tmp_path)
+
+        assert session.decks()["decks"] == ["Default", "Stats"]
