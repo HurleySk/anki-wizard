@@ -40,6 +40,23 @@ class Card:
 
 
 @dataclass
+class AdoptedNote:
+    """A note this harness did not create, tracked so edits leave a trail.
+
+    Holds a reference and never content. The fields list names the note's real
+    fields so an edit can be checked against them before it is sent; the values
+    stay in Anki, which is what keeps this entry from going stale.
+    """
+
+    note_id: int
+    model: str
+    deck: str
+    fields: list[str]
+    tags: list[str] = field(default_factory=list)
+    history: list[dict] = field(default_factory=list)
+
+
+@dataclass
 class Section:
     """A traversable unit of a document.
 

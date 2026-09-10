@@ -1,4 +1,4 @@
-from anki_wizard.models import Card, CardSource, Cursor, Outline, Section
+from anki_wizard.models import AdoptedNote, Card, CardSource, Cursor, Outline, Section
 
 
 def test_card_source_from_document():
@@ -52,3 +52,28 @@ def test_cursor_defaults_empty():
     c = Cursor()
     assert c.position is None
     assert c.covered == []
+
+
+def test_adopted_note_holds_a_reference_not_content():
+    """The ledger records which note and which fields, never the field values.
+
+    A copy would drift the moment anyone edited in Anki, and there is no
+    sync-back to repair it. A reference cannot show stale content.
+    """
+    note = AdoptedNote(
+        note_id=1739985246842,
+        model="Cloze Overlapping",
+        deck="Intro to Probability::Unit I",
+        fields=["Text", "Answer"],
+    )
+    assert note.note_id == 1739985246842
+    assert note.tags == []
+    assert note.history == []
+    assert not hasattr(note, "front")
+
+
+def test_adopted_notes_do_not_share_mutable_defaults():
+    a = AdoptedNote(note_id=1, model="Basic", deck="D", fields=["Front"])
+    b = AdoptedNote(note_id=2, model="Basic", deck="D", fields=["Front"])
+    a.tags.append("x")
+    assert b.tags == []

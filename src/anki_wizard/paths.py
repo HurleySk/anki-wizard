@@ -4,6 +4,7 @@ This is the single source of truth for the state directory layout. No other
 module should construct paths by string concatenation.
 """
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,3 +63,17 @@ class Paths:
         if not name or "/" in name or "\\" in name or name in (".", ".."):
             raise ValueError(f"note name must be a single path segment: {name!r}")
         return self.notes_dir() / f"{name}.html"
+
+
+def deck_slug(deck: str) -> str:
+    """A ledger slug for the course a deck belongs to.
+
+    Only the top-level deck is used, so every note from a course lands in one
+    ledger however deep its subdeck. Anki deck names are free text and this
+    becomes a filename, so anything unusable is stripped.
+    """
+    top = deck.split("::")[0]
+    slug = re.sub(r"[^a-z0-9]+", "-", top.lower()).strip("-")
+    if not slug:
+        raise ValueError(f"deck name has no usable slug characters: {deck!r}")
+    return slug
