@@ -12,7 +12,7 @@ no state layout at all. That is the seam, not a filing convenience.
 import re
 from html import unescape
 
-from anki_wizard.anki import AnkiClient
+from anki_wizard.anki import AnkiClient, AnkiError
 from anki_wizard.render import reveal_clozes
 
 # Stripping tags alone leaves the CSS or JS body behind as if it were text,
@@ -187,6 +187,44 @@ def read_note(note_id: int, client: AnkiClient) -> dict:
         "ordered_fields": fields,
         "media": media,
     }
+
+
+def note_blocks(note_id: int, client: AnkiClient) -> list[dict]:
+    """Pad blocks showing one note, with its media fetched and inlined.
+
+    Returned as blocks rather than rendered so the caller can put the card in a
+    page beside its own prose -- the point is working through the material, not
+    previewing the card on its own.
+    """
+    note = read_note(note_id, client)
+
+    media: dict[str, bytes] = {}
+    # dict.fromkeys, not set(...): a note referencing one image on both its
+    # front and back (read_note's media list is not de-duplicated) must be
+    # fetched once, and the fetch order should still match the note's own
+    # field order rather than whatever order a set happens to iterate in.
+    for filename in dict.fromkeys(note["media"]):
+        try:
+            data = client.retrieve_media_file(filename)
+        except AnkiError:
+            # A single corrupt or truncated file must not blank the whole
+            # pad -- the pad's job is to show the user the card, and a card
+            # missing one image is far better than no pad at all. render.py's
+            # _inline_media leaves an unresolved <img src="..."> tag alone
+            # rather than hiding it, so skipping the file here degrades to a
+            # visible broken image with its filename intact, not silence.
+            continue
+        if data is not None:
+            media[filename] = data
+
+    return [
+        {
+            "type": "note",
+            "title": note["deck"],
+            "fields": note["ordered_fields"],
+            "media": media,
+        }
+    ]
 
 
 def list_decks(client: AnkiClient) -> dict:

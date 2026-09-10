@@ -1,11 +1,14 @@
 """Reading and editing notes anywhere in the collection."""
 
+import base64
+
 import pytest
 
 from anki_wizard.anki import AnkiClient
 from anki_wizard.collection import (
     _plain,
     list_decks,
+    note_blocks,
     read_note,
     search_collection,
 )
@@ -254,3 +257,86 @@ def test_a_preview_reads_as_text_not_as_source():
 def test_a_typed_entity_survives_as_text():
     """Unescaping before the tag strip would turn "&lt;b&gt;" into a tag to eat."""
     assert _plain("&lt;b&gt; typed as text") == "<b> typed as text"
+
+
+def test_note_blocks_carry_fields_and_fetched_media():
+    """The tool fetches; the renderer stays a pure function of its input."""
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [CLOZE_NOTE])
+        fake.set_response("cardsInfo", [{"deckName": "Intro to Probability::Unit I"}])
+        fake.set_response(
+            "retrieveMediaFile", base64.b64encode(b"JPEGDATA").decode()
+        )
+        client = AnkiClient(fake.url)
+
+        blocks = note_blocks(1739985246842, client)
+
+    assert len(blocks) == 1
+    block = blocks[0]
+    assert block["type"] == "note"
+    assert (
+        "Text",
+        "A {{c1::network}} connects \\(A\\) and \\(B\\).",
+    ) in block["fields"]
+    assert block["media"] == {"paste-abc.jpg": b"JPEGDATA"}
+    assert "Intro to Probability" in block["title"]
+
+
+def test_note_blocks_tolerate_missing_media():
+    """A file Anki cannot find must not stop the pad from rendering the card."""
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [CLOZE_NOTE])
+        fake.set_response("cardsInfo", [{"deckName": "D"}])
+        fake.set_response("retrieveMediaFile", False)
+        client = AnkiClient(fake.url)
+
+        blocks = note_blocks(1739985246842, client)
+
+    assert blocks[0]["media"] == {}
+
+
+def test_note_blocks_tolerate_undecodable_media():
+    """A corrupt file must not abort the whole pad -- only that file is lost.
+
+    retrieve_media_file raises AnkiError (not None) when the payload does not
+    decode as base64, which is a different failure mode than "file missing"
+    and must be caught separately.
+    """
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [CLOZE_NOTE])
+        fake.set_response("cardsInfo", [{"deckName": "D"}])
+        fake.set_response("retrieveMediaFile", "not!valid!base64")
+        client = AnkiClient(fake.url)
+
+        blocks = note_blocks(1739985246842, client)
+
+    assert blocks[0]["media"] == {}
+    # The rest of the note is untouched by the one bad file.
+    assert (
+        "Text",
+        "A {{c1::network}} connects \\(A\\) and \\(B\\).",
+    ) in blocks[0]["fields"]
+
+
+def test_note_blocks_fetch_a_repeated_file_once():
+    """One image referenced on both sides of a card is one round-trip, not two."""
+    repeated = {
+        **OUT_OF_ORDER_NOTE,
+        "fields": {
+            "Front": {"value": '<img src="a.png"> front', "order": 0},
+            "Back": {"value": '<img src="a.png"> back', "order": 1},
+        },
+    }
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [repeated])
+        fake.set_response("cardsInfo", [{"deckName": "D"}])
+        fake.set_response(
+            "retrieveMediaFile", base64.b64encode(b"PNGDATA").decode()
+        )
+        client = AnkiClient(fake.url)
+
+        blocks = note_blocks(42, client)
+
+    assert blocks[0]["media"] == {"a.png": b"PNGDATA"}
+    fetches = [r for r in fake.requests if r["action"] == "retrieveMediaFile"]
+    assert len(fetches) == 1
