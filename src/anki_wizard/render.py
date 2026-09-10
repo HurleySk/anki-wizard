@@ -152,6 +152,12 @@ def _render_step(number: int, step: dict) -> str:
     return row
 
 
+# A media type and subtype, which is all a data URI here ever needs. Narrow on
+# purpose: the point is to reject anything that could carry a quote out of the
+# attribute, not to accept every mime the RFC allows.
+_TOKEN = r"[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]{0,126}"
+_MIME = re.compile(rf"{_TOKEN}/{_TOKEN}")
+
 _MIME_BY_SUFFIX = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -190,6 +196,14 @@ def _render_image(block: dict) -> str:
         mime = block.get("mime")
         if not mime:
             raise ValueError("an image block built from data needs a mime type")
+
+    if not _MIME.fullmatch(mime):
+        # mime lands inside the src attribute, so a value carrying a quote
+        # would close it and let the rest become attributes of its own -- an
+        # onerror handler, say. Anki media filenames are user data and a note
+        # block infers this from them, so the check is against a shape rather
+        # than an escape: a mime that is not a mime is a bug either way.
+        raise ValueError(f"not a usable image mime type: {mime!r}")
 
     encoded = base64.b64encode(data).decode("ascii")
     caption = block.get("caption")

@@ -196,3 +196,30 @@ def test_image_caption_is_escaped():
 def test_image_block_needs_data_or_a_path():
     with pytest.raises(ValueError, match=r"data.*path"):
         render_html([{"type": "image"}])
+
+
+def test_image_mime_cannot_break_out_of_the_src_attribute():
+    """mime is interpolated into an attribute, so a quote in it would escape.
+
+    Reachable rather than theoretical: a note block infers the mime for Anki
+    media, and those filenames are user data. The payload below renders an
+    onerror handler if the value is passed through unchecked.
+    """
+    with pytest.raises(ValueError, match="mime"):
+        render_html(
+            [
+                {
+                    "type": "image",
+                    "data": b"X",
+                    "mime": 'image/png" onerror="alert(1)',
+                }
+            ]
+        )
+
+
+def test_image_mime_from_an_odd_suffix_is_refused(tmp_path):
+    """The suffix table has no entry for this, so the fallback must still be a mime."""
+    odd = tmp_path / 'x.png" onerror="alert(1)'
+    odd.write_bytes(b"X")
+    html = render_html([{"type": "image", "path": str(odd)}])
+    assert "onerror" not in html
