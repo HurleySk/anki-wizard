@@ -252,7 +252,14 @@ def _render_figure(block: dict) -> str:
 # only inside the collection. The pad has to inline the bytes instead.
 _IMG_SRC = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]+)(")', re.IGNORECASE)
 
-_CLOZE = re.compile(r"\{\{c\d+::(.*?)(?:::[^}]*)?\}\}", re.DOTALL)
+# The ordinal is comma-separated for the same reason cloze.py's is:
+# {{c2,3::text}} is one deletion feeding two cards. Matching only c\d+
+# here would leave that markup on the pad raw, which is the thing this
+# reveal exists to prevent. The two modules must agree on the syntax
+# even though they cannot share a regex -- cloze.py stops at the "::"
+# because it only wants the ordinal, while this one spans the whole
+# deletion in order to replace it.
+_CLOZE = re.compile(r"\{\{c[\d,]+::(.*?)(?:::[^}]*)?\}\}", re.DOTALL)
 
 # A separate table from _MIME_BY_SUFFIX, deliberately not shared: this one
 # backs a lookup that must fail open (leave the tag alone) rather than raise,

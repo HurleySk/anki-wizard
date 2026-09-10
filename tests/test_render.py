@@ -330,6 +330,21 @@ def test_note_block_renders_cloze_deletions_readably():
     assert "X" in html
 
 
+def test_note_block_reveals_a_shared_deletion():
+    """{{c2,3::x}} is one deletion feeding two cards, and cloze.py handles it.
+
+    Matching only c\\d+ here left the markup raw on the pad -- the exact
+    failure revealing exists to prevent -- while cloze_numbers counted it
+    correctly, so the two modules disagreed about what a deletion is.
+    """
+    html = render_html([{
+        "type": "note",
+        "fields": [("Text", "the {{c2,3::shared}} term")],
+    }])
+    assert "{{c2,3::" not in html
+    assert "shared" in html
+
+
 def test_note_block_drops_a_cloze_hint():
     html = render_html([{"type": "note", "fields": [("Text", "{{c1::ans::hint}}")]}])
     assert "ans" in html
