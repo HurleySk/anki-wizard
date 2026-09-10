@@ -328,6 +328,9 @@ def _render_note(block: dict) -> str:
     The consequence is that a note's markup runs in the pad exactly as written
     -- a <script> or an onerror handler in a field executes, and _IMG_SRC only
     rewrites a quoted src, leaving the rest of a tag's attributes untouched.
+    That scan also stops at a ">" inside an earlier attribute, so an <img> with
+    alt="x > y" keeps its collection-local src and simply does not render, the
+    same way an unresolvable tag does.
     This is accepted rather than sanitized: the pad is served on 127.0.0.1 to
     one local user, not a remote surface, and the same HTML already runs
     inside Anki itself whenever this card comes up for review.
