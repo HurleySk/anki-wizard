@@ -250,6 +250,9 @@ def _render_figure(block: dict) -> str:
 
 # Anki writes media as a plain filename in the field's HTML, which resolves
 # only inside the collection. The pad has to inline the bytes instead.
+# collection._IMG_SRC is deliberately the same shape: it extracts the
+# filenames that get fetched and handed here, so the two must agree on what
+# counts as a media reference -- a tag it misses is a broken image here.
 _IMG_SRC = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]+)(")', re.IGNORECASE)
 
 # The ordinal is comma-separated for the same reason cloze.py's is:

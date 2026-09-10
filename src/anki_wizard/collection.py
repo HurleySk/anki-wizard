@@ -4,26 +4,49 @@ The rest of this package treats Anki as a destination: content flows from a PDF
 through the ledger and out. These tools read the other way, so a note this
 harness never created can still be found, shown, and corrected.
 
-Kept out of tools.py, which is already the largest module here and is about
-documents, outlines, and coverage -- none of which these touch.
+Kept out of tools.py, which is about documents, outlines, and coverage: every
+function there takes a Paths and usually a slug, while these take a client and
+no state layout at all. That is the seam, not a filing convenience.
 """
 
 import re
+from html import unescape
 
 from anki_wizard.anki import AnkiClient
 from anki_wizard.render import reveal_clozes
 
-_TAG = re.compile(r"<[^>]+>")
+# Stripping tags alone leaves the CSS or JS body behind as if it were text,
+# and a per-note <style> block is common in decks shared from AnkiWeb.
+_DROP = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+
+# Deliberately not a general "<...>", for the reason render._MARKUP gives: a
+# field's math is full of literal comparisons, and "\(n < 5\), then \(p > 0\)"
+# would lose everything between the two operators -- previewing as "\(n 0\)",
+# which reads as content rather than as damage. Requiring a name character,
+# "/" or "!" after the "<" keeps those while still eating real tags. A "<"
+# directly against a letter (\(a <b\)) still misfires; that is rarer than the
+# spaced form this protects.
+_TAG = re.compile(r"</?[a-zA-Z!][^>]*>")
+
+# Deliberately the same shape as render._IMG_SRC, which rewrites these same
+# srcs to data URIs: the filenames extracted here are what get fetched and
+# handed to that block, so a tag missed here is a broken image there.
 _IMG_SRC = re.compile(r'<img\b[^>]*?\bsrc="([^"]+)"', re.IGNORECASE)
 
 PREVIEW_CHARS = 120
 
 
 def _plain(html: str) -> str:
-    """Field HTML reduced to something readable in a terminal result."""
+    """Field HTML reduced to something readable in a terminal result.
+
+    Entities are unescaped after the tags come out, not before: "&lt;b&gt;" in
+    a field is text the user typed, and unescaping first would turn it into a
+    tag for the next pass to eat.
+    """
     text = reveal_clozes(html)
+    text = _DROP.sub(" ", text)
     text = _TAG.sub(" ", text)
-    return " ".join(text.split())
+    return " ".join(unescape(text).split())
 
 
 def _ordered_fields(record_: dict) -> list[tuple[str, str]]:
@@ -37,6 +60,24 @@ def _ordered_fields(record_: dict) -> list[tuple[str, str]]:
         (name, value.get("value", ""))
         for name, value in sorted(items, key=lambda kv: kv[1].get("order", 0))
     ]
+
+
+def _decks_by_card(card_ids: list[int], client: AnkiClient) -> dict[int, str]:
+    """Deck name per card id, in one call.
+
+    strict=True is safe here, and is the check worth having: cardsInfo appends
+    an empty dict for a card it cannot find rather than dropping the position,
+    so the two lists correspond even when an id is stale. A length mismatch
+    would mean decks silently attached to the wrong notes, which is worse than
+    an error.
+    """
+    if not card_ids:
+        return {}
+    cards = client.cards_info(card_ids)
+    return {
+        cid: card.get("deckName", "") if card else ""
+        for cid, card in zip(card_ids, cards, strict=True)
+    }
 
 
 def _fetch(note_id: int, client: AnkiClient) -> dict:
@@ -67,6 +108,11 @@ def search_collection(query: str, client: AnkiClient, limit: int = 25) -> dict:
     carry a short preview rather than full fields: a cloze note type can have
     sixteen fields, and dumping them all would bury the note being looked for.
     """
+    if limit < 1:
+        # A raise, not a clamp: these arguments come from an agent or an MCP
+        # client, and 0 meaning "unlimited" is a guess this cannot make safely.
+        raise ValueError(f"limit must be at least 1, got {limit}")
+
     note_ids = client.find_notes(query)
     if not note_ids:
         return {"query": query, "count": 0, "truncated": False, "notes": []}
@@ -82,11 +128,7 @@ def search_collection(query: str, client: AnkiClient, limit: int = 25) -> dict:
     # call per note -- at the default limit that is the difference between 1
     # HTTP round-trip and 25.
     all_card_ids = [cid for r in records for cid in r.get("cards", [])]
-    deck_by_card: dict[int, str] = {}
-    if all_card_ids:
-        cards = client.cards_info(all_card_ids)
-        for card_id, card in zip(all_card_ids, cards, strict=True):
-            deck_by_card[card_id] = card.get("deckName", "") if card else ""
+    deck_by_card = _decks_by_card(all_card_ids, client)
 
     notes = []
     for record_ in records:
@@ -115,6 +157,10 @@ def read_note(note_id: int, client: AnkiClient) -> dict:
 
     Field names matter as much as values here -- an edit is checked against
     them, so a caller that never read the note cannot safely write to it.
+
+    `fields` and `ordered_fields` carry the same pairs in two shapes on
+    purpose: an edit looks a field up by name, while the pad's note block
+    takes the ordered list. Both preserve note-type order.
     """
     record_ = _fetch(note_id, client)
     fields = _ordered_fields(record_)
@@ -122,12 +168,7 @@ def read_note(note_id: int, client: AnkiClient) -> dict:
     for _, value in fields:
         media.extend(_IMG_SRC.findall(value))
 
-    card_ids = record_.get("cards", [])
-    deck_by_card = {}
-    if card_ids:
-        cards = client.cards_info(card_ids)
-        for card_id, card in zip(card_ids, cards, strict=True):
-            deck_by_card[card_id] = card.get("deckName", "") if card else ""
+    deck_by_card = _decks_by_card(record_.get("cards", []), client)
 
     return {
         "note_id": note_id,

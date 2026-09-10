@@ -47,8 +47,10 @@ def test_search_returns_scannable_summaries():
     hit = found["notes"][0]
     assert hit["note_id"] == 1739985246842
     assert hit["model"] == "Cloze Overlapping"
-    assert "network" in hit["preview"]
     assert "{{c1::" not in hit["preview"]
+    # Positive, not just the absence of markup: a reveal that deleted the
+    # deletion instead of unwrapping it would satisfy the negative alone.
+    assert hit["preview"].startswith("A network connects")
 
 
 def test_search_reports_nothing_found_without_calling_for_details():
@@ -74,7 +76,9 @@ def test_search_caps_the_number_of_notes_it_details():
 
     assert found["count"] == 50
     assert found["truncated"] is True
-    assert len(fake.requests[1]["params"]["notes"]) == 1
+    detailed = next(r for r in fake.requests if r["action"] == "notesInfo")
+    assert len(detailed["params"]["notes"]) == 1
+    assert len(found["notes"]) == 1
 
 
 def test_search_batches_deck_lookup_into_one_call():
@@ -136,3 +140,92 @@ def test_list_decks_returns_the_tree():
         client = AnkiClient(fake.url)
 
         assert list_decks(client)["decks"] == ["Default", "Stats", "Stats::Unit I"]
+
+
+OUT_OF_ORDER_NOTE = {
+    "noteId": 42,
+    "modelName": "Basic",
+    "tags": [],
+    "cards": [7],
+    # Insertion order deliberately disagrees with the note type's own order,
+    # which is the only thing that exercises _ordered_fields at all.
+    "fields": {
+        "Back": {"value": "second", "order": 1},
+        "Front": {"value": "first", "order": 0},
+    },
+}
+
+
+def test_read_note_uses_the_note_types_order_not_the_json_order():
+    """Anki sends a dict; its insertion order is not the field order."""
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [OUT_OF_ORDER_NOTE])
+        fake.set_response("cardsInfo", [{"deckName": "D"}])
+        client = AnkiClient(fake.url)
+
+        note = read_note(42, client)
+
+    assert note["field_names"] == ["Front", "Back"]
+    assert note["ordered_fields"] == [("Front", "first"), ("Back", "second")]
+
+
+def test_read_note_reports_no_deck_for_a_note_with_no_cards():
+    """A note whose cards were all deleted still reads, with an empty deck.
+
+    Task 10 slugs this value to pick a ledger, so it must not surprise: an
+    empty string is the honest answer, and raising here would stop a caller
+    from even looking at the note.
+    """
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [{**OUT_OF_ORDER_NOTE, "cards": []}])
+        client = AnkiClient(fake.url)
+
+        note = read_note(42, client)
+
+    assert note["deck"] == ""
+    assert not any(r["action"] == "cardsInfo" for r in fake.requests)
+
+
+def test_read_note_collects_media_from_every_field():
+    """Task 9 fetches these bytes, so a filename missed here is a lost image."""
+    two_images = {
+        **OUT_OF_ORDER_NOTE,
+        "fields": {
+            "Front": {"value": '<img src="a.png"> text', "order": 0},
+            "Back": {"value": 'none here', "order": 1},
+            "Extra": {"value": '<img src="b.jpg">', "order": 2},
+        },
+    }
+    with FakeAnki() as fake:
+        fake.set_response("notesInfo", [two_images])
+        fake.set_response("cardsInfo", [{"deckName": "D"}])
+        client = AnkiClient(fake.url)
+
+        assert read_note(42, client)["media"] == ["a.png", "b.jpg"]
+
+
+def test_search_rejects_a_limit_below_one():
+    """0 reads as "unlimited" to a caller and as "an empty page" to a slice."""
+    with FakeAnki() as fake:
+        client = AnkiClient(fake.url)
+        with pytest.raises(ValueError, match="at least 1"):
+            search_collection("deck:D", client, limit=0)
+
+
+def test_a_preview_keeps_a_comparison_in_math():
+    """A greedy <...> strip would delete everything between the operators.
+
+    This collection is a statistics deck, so "\\(n < 5\\)" is house style, and
+    a preview reading "\\(n  0\\)" looks like content rather than damage.
+    """
+    field = {"value": r"If \(n < 5\), then \(p > 0\).", "order": 0}
+    with FakeAnki() as fake:
+        fake.set_response("findNotes", [1])
+        fake.set_response("notesInfo", [{**OUT_OF_ORDER_NOTE, "fields": {"T": field}}])
+        fake.set_response("cardsInfo", [{"deckName": "D"}])
+        client = AnkiClient(fake.url)
+
+        preview = search_collection("n", client)["notes"][0]["preview"]
+
+    assert r"\(n < 5\)" in preview
+    assert r"\(p > 0\)" in preview
