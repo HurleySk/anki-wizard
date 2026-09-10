@@ -200,7 +200,7 @@ name the justification. A derivation whose steps are unjustified teaches the
 manipulation without the reason, which is the failure mode the pad exists to fix.
 
 **An `animation` block is for when the motion is the lesson.** It takes a
-matplotlib `FuncAnimation` the way `figure` takes a Figure, and renders with a
+matplotlib `Animation` the way `figure` takes a Figure, and renders with a
 play, pause, step, and scrub bar. Use it when a quantity changes with a
 parameter or with \(n\) and the reader needs to watch it change: sample means
 tightening as \(n\) grows, a density reshaping as its parameter moves, Taylor
@@ -213,12 +213,14 @@ the \(n\) where the bell arrives, which is the thing the lecture asserts and
 the exam asks about.
 
 Frames are inlined at roughly 17 KB each, so 30 to 60 frames is the right
-range; the renderer refuses a page over 8 MB. Build the animation on a
+range; the renderer refuses an animation over 8 MB. Build it on a
 `matplotlib.figure.Figure(layout="constrained")`, not `pyplot`: no window is
 opened, and the export does not crop to a tight bounding box the way `figure`
 does, so without constrained layout an axis label is clipped off the bottom.
-Set `interval` on the animation for playback speed; the same Animation object
-may appear more than once on a page.
+Frames export at the figure's own dpi (100 by default, against 150 for a
+`figure`), so pass `dpi=` to the Figure constructor if the frames look soft
+beside a still. Set `interval` on the animation for playback speed; the same
+Animation object may appear more than once on a page.
 
 ## The why field
 

@@ -169,19 +169,23 @@ def _an_animation(frames=3):
 def test_animation_is_embedded_with_its_player():
     """Self-contained, like a figure: frames are data URIs and the player is
     inline script. matplotlib's export also links an icon font from a CDN;
-    the one "http" the page may carry is the MathJax script in the head, so
-    the count pins the icon-font link as removed.
+    the one URL the page may carry is the MathJax script in the head, so the
+    count pins the icon-font link as removed. Counted as "://" rather than
+    "http": base64 can spell "http" inside a frame, but ":" is outside its
+    alphabet, so this cannot false-positive.
     """
     html = render_html([{"type": "animation", "animation": _an_animation()}])
     assert "data:image/png;base64," in html
     assert "function Animation" in html
-    assert html.count("http") == 1
+    assert html.count("://") == 1
     assert "font-awesome" not in html
 
 
 def test_animation_controls_show_text_without_the_icon_font():
     html = render_html([{"type": "animation", "animation": _an_animation()}])
-    assert "fa fa-" not in html
+    # "fa-" rather than "fa fa-": an icon the glyph table does not know falls
+    # back to its class name as visible text, and this is what catches that.
+    assert "fa-" not in html
     assert "<i " not in html
     # Solid triangles play, hollow ones step, each in both directions.
     for glyph in "▶◀▷◁":
@@ -240,7 +244,7 @@ def test_oversized_animation_is_refused_with_advice():
         def to_jshtml(self):
             return "x" * (9 * 1024 * 1024)
 
-    with pytest.raises(ValueError, match="(?i)frames"):
+    with pytest.raises(ValueError, match=r"9\.0 MB.*frames"):
         render_html([{"type": "animation", "animation": Huge()}])
 
 

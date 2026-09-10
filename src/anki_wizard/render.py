@@ -45,6 +45,7 @@ window.MathJax = {{
 
 _CSS = """
 :root {
+  color-scheme: light dark;
   --ink: #1a1a1a;
   --paper: #fdfdfc;
   --muted: #6b6b6b;
@@ -53,6 +54,9 @@ _CSS = """
 @media (prefers-color-scheme: dark) {
   :root { --ink: #e8e8e6; --paper: #16161a; --muted: #9a9a97; --rule: #33333a; }
 }
+/* matplotlib's player styles itself inline-block, which under a bare
+   <figure> sits left while the caption centers. */
+figure > .animation { display: block; }
 body {
   background: var(--paper);
   color: var(--ink);
@@ -251,7 +255,7 @@ def _render_figure(block: dict) -> str:
     )
 
 
-# matplotlib's HTML player links an icon font from a CDN for its eight control
+# matplotlib's HTML player links an icon font from a CDN for its nine control
 # buttons and nothing else. The page is meant to be one artifact that opens
 # offline (every image is a data URI for that reason), and a control bar that
 # renders blank without network is not worth a third-party stylesheet, so the
@@ -294,9 +298,9 @@ def _render_animation(block: dict) -> str:
     player = block["animation"].to_jshtml()
     if len(player) > _MAX_ANIMATION_BYTES:
         raise ValueError(
-            f"animation renders to {len(player) // (1024 * 1024)} MB, over the "
-            f"{_MAX_ANIMATION_BYTES // (1024 * 1024)} MB limit; use fewer "
-            "frames, a smaller figure, or a lower dpi"
+            f"animation renders to {len(player) / 2**20:.1f} MB, over the "
+            f"{_MAX_ANIMATION_BYTES // 2**20} MB limit; use fewer frames, "
+            "a smaller figure, or a lower dpi"
         )
 
     token = _PLAYER_TOKEN.search(player)
