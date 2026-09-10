@@ -212,13 +212,27 @@ read at all, and the cards that genuinely need one lose their voice.
 
 **A why that asserts is not yet a why.** "Independent variances add" or "a
 linear combination of Gaussians is Gaussian" is another fact to memorise, not
-a reason. When the why leans on a step like that, carry the step's own short
-derivation: expand the square and show the cross term vanish, multiply the
-MGFs, substitute into the definition of variance. Two or three lines of
-displayed math is the right size — enough that the reader could reproduce the
-result, not a textbook section. The step that gets asserted without proof is
-usually the one that gets misapplied under exam pressure, which is exactly the
-gap the field exists to close.
+a reason. When the why leans on a step like that, carry the step's own
+derivation, worked at the level of the algebra:
+
+- **Multiply it out.** Write \((A+B)^2 = A^2 + 2AB + B^2\) and take the
+  expectation term by term, rather than jumping from the square to the answer.
+- **Name each term.** Say which piece is \(\mathrm{Var}(X)\), which is
+  \(\mathrm{Cov}(X,Y)\), which is the \(\beta\) that will drop out.
+- **Show the term that vanishes, and why.** "The cross term is zero" is the
+  assertion again; \(\mathbb{E}[AB] = \mathbb{E}[A]\,\mathbb{E}[B] = 0\)
+  because independence factors the expectation is the reason. If a hypothesis
+  is what makes it vanish, name the hypothesis at that line.
+- **Extend from two to \(n\)** when the card is about \(n\): count the
+  squared terms and the cross terms, and say what happens to each.
+
+Label the stages when there are several (Step 1, Step 2) so the reader can
+find the one they doubt. The right length is whatever it takes to reproduce
+the result on paper with no other reference — usually four to eight lines of
+displayed math, not a textbook section, and not the two-line sketch that
+skips the multiplication. The step that gets asserted without proof is
+usually the one that gets misapplied under exam pressure, which is exactly
+the gap the field exists to close.
 
 Set it at proposal time alongside `front` and `back`, or add one later with
 `revise_card`.
