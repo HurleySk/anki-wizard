@@ -217,9 +217,36 @@ def test_image_mime_cannot_break_out_of_the_src_attribute():
         )
 
 
-def test_image_mime_from_an_odd_suffix_is_refused(tmp_path):
-    """The suffix table has no entry for this, so the fallback must still be a mime."""
+def test_a_hostile_filename_cannot_reach_the_src_attribute(tmp_path):
+    """A filename is never interpolated, so the suffix cannot carry a quote out.
+
+    The suffix table has no entry for this one, and the fallback it lands on is
+    a fixed literal rather than anything derived from the name. Anki media
+    filenames are user data, so it is worth pinning that the name stays out of
+    the attribute entirely.
+    """
     odd = tmp_path / 'x.png" onerror="alert(1)'
     odd.write_bytes(b"X")
     html = render_html([{"type": "image", "path": str(odd)}])
     assert "onerror" not in html
+    assert "data:application/octet-stream;base64," in html
+
+
+def test_an_explicit_mime_is_checked_on_the_path_branch_too(tmp_path):
+    """A caller may name the mime alongside a path, and that value is interpolated.
+
+    The guard sits after the two branches converge for this reason; inside the
+    bytes branch it would leave this one open.
+    """
+    image = tmp_path / "figure.png"
+    image.write_bytes(b"X")
+    with pytest.raises(ValueError, match="mime"):
+        render_html(
+            [
+                {
+                    "type": "image",
+                    "path": str(image),
+                    "mime": 'image/png" onerror="alert(1)',
+                }
+            ]
+        )
