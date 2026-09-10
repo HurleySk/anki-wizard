@@ -162,9 +162,10 @@ class AnkiClient:
         """
         if not fields:
             raise AnkiError("no fields to update; refusing an empty write")
-        self._invoke(
-            "updateNoteFields", note={"id": note_id, "fields": dict(fields)}
-        )
+        # Copied so what goes on the wire is what the caller checked: a guarded
+        # edit counts cloze deletions before writing, and a dict mutated
+        # between that count and this call would slip past the guard.
+        self._invoke("updateNoteFields", note={"id": note_id, "fields": dict(fields)})
 
     def notes_info(self, note_ids: list[int]) -> list[dict]:
         """Full records -- fields, tags, model -- for these notes.
