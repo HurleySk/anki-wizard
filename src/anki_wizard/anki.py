@@ -148,6 +148,21 @@ class AnkiClient:
             },
         )
 
+    def update_note_fields_by_name(self, note_id: int, fields: dict[str, str]) -> None:
+        """Write named fields on any note, whatever its note type.
+
+        update_note_fields writes Front/Back/Why, which is right for cards this
+        harness authored and wrong for every other note in the collection --
+        sending those names to a cloze note either errors or blanks its real
+        content. This one sends only what the caller names, so the caller is
+        responsible for having read the note's real field names first.
+        """
+        if not fields:
+            raise AnkiError("no fields to update; refusing an empty write")
+        self._invoke(
+            "updateNoteFields", note={"id": note_id, "fields": dict(fields)}
+        )
+
     def notes_info(self, note_ids: list[int]) -> list[dict]:
         """Full records -- fields, tags, model -- for these notes.
 

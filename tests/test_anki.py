@@ -313,3 +313,24 @@ def test_update_note_model_sends_one_note_object():
             "tags": ["stats-ch1"],
         }
     }
+
+
+def test_update_note_fields_by_name_sends_exactly_what_it_is_given():
+    """The general writer must not invent Front/Back/Why on a foreign note."""
+    with FakeAnki() as fake:
+        fake.set_response("updateNoteFields", None)
+        client = AnkiClient(fake.url)
+        client.update_note_fields_by_name(1234, {"Text": "new", "Answer": "a"})
+
+        sent = fake.requests[-1]
+        assert sent["action"] == "updateNoteFields"
+        assert sent["params"]["note"]["id"] == 1234
+        assert sent["params"]["note"]["fields"] == {"Text": "new", "Answer": "a"}
+
+
+def test_update_note_fields_by_name_refuses_an_empty_change():
+    """An empty write would be a no-op round trip that reads as success."""
+    with FakeAnki() as fake:
+        client = AnkiClient(fake.url)
+        with pytest.raises(AnkiError, match="no fields"):
+            client.update_note_fields_by_name(1234, {})
