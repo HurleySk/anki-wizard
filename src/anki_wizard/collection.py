@@ -23,9 +23,12 @@ _DROP = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOT
 # field's math is full of literal comparisons, and "\(n < 5\), then \(p > 0\)"
 # would lose everything between the two operators -- previewing as "\(n 0\)",
 # which reads as content rather than as damage. Requiring a name character,
-# "/" or "!" after the "<" keeps those while still eating real tags. A "<"
-# directly against a letter (\(a <b\)) still misfires; that is rarer than the
-# spaced form this protects.
+# "/" or "!" after the "<" keeps those while still eating real tags. It is not
+# airtight: a "<" followed by a letter ("\(a<b\)", "\(a <b\)") still opens a
+# match that runs to the next ">" anywhere in the field, so a comparison
+# written without a space before its right operand loses the span after it.
+# Rarer than the spaced form this protects, which is the house style here,
+# and closing it properly needs a real parser rather than a wider regex.
 _TAG = re.compile(r"</?[a-zA-Z!][^>]*>")
 
 # Deliberately the same shape as render._IMG_SRC, which rewrites these same
@@ -51,6 +54,10 @@ def _plain(html: str) -> str:
 
 def _ordered_fields(record_: dict) -> list[tuple[str, str]]:
     """A note's fields in the note type's own order.
+
+    The trailing underscore is collision avoidance, not decoration: `record`
+    is ledger.py's history helper, which the guarded edit added here later
+    imports by that name.
 
     notesInfo returns a dict carrying an explicit order per field; relying on
     insertion order would put a card's fields in whatever order the JSON came.

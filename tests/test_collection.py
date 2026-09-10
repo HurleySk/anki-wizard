@@ -3,7 +3,12 @@
 import pytest
 
 from anki_wizard.anki import AnkiClient
-from anki_wizard.collection import list_decks, read_note, search_collection
+from anki_wizard.collection import (
+    _plain,
+    list_decks,
+    read_note,
+    search_collection,
+)
 from tests.fake_anki import FakeAnki
 
 CLOZE_NOTE = {
@@ -192,7 +197,7 @@ def test_read_note_collects_media_from_every_field():
         **OUT_OF_ORDER_NOTE,
         "fields": {
             "Front": {"value": '<img src="a.png"> text', "order": 0},
-            "Back": {"value": 'none here', "order": 1},
+            "Back": {"value": "none here", "order": 1},
             "Extra": {"value": '<img src="b.jpg">', "order": 2},
         },
     }
@@ -229,3 +234,23 @@ def test_a_preview_keeps_a_comparison_in_math():
 
     assert r"\(n < 5\)" in preview
     assert r"\(p > 0\)" in preview
+
+
+def test_a_preview_reads_as_text_not_as_source():
+    """Entities and a shared deck's <style> block are noise in 120 characters."""
+    field = {"value": "<style>.card{color:red}</style>A&nbsp;&amp;&nbsp;B", "order": 0}
+    with FakeAnki() as fake:
+        fake.set_response("findNotes", [1])
+        fake.set_response("notesInfo", [{**OUT_OF_ORDER_NOTE, "fields": {"T": field}}])
+        fake.set_response("cardsInfo", [{"deckName": "D"}])
+        client = AnkiClient(fake.url)
+
+        preview = search_collection("b", client)["notes"][0]["preview"]
+
+    assert preview == "A & B"
+    assert "color:red" not in preview
+
+
+def test_a_typed_entity_survives_as_text():
+    """Unescaping before the tag strip would turn "&lt;b&gt;" into a tag to eat."""
+    assert _plain("&lt;b&gt; typed as text") == "<b> typed as text"
