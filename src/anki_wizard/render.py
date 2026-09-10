@@ -259,6 +259,12 @@ _IMG_SRC = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]+)(")', re.IGNORECASE)
 # even though they cannot share a regex -- cloze.py stops at the "::"
 # because it only wants the ordinal, while this one spans the whole
 # deletion in order to replace it.
+#
+# A hint containing a brace ({{c1::ans::a{b}}}) leaves a stray "}" behind:
+# [^}]* cannot span one. Accepted rather than fixed -- hints are short
+# recall prompts, the damage is one character on a display-only surface,
+# and matching braces properly needs the real parser cloze.py declines to
+# write for this same syntax.
 _CLOZE = re.compile(r"\{\{c[\d,]+::(.*?)(?:::[^}]*)?\}\}", re.DOTALL)
 
 # A separate table from _MIME_BY_SUFFIX, deliberately not shared: this one

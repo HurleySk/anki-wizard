@@ -383,6 +383,23 @@ def test_note_block_leaves_unresolved_media_alone():
     assert "gone.jpg" in html
 
 
+def test_note_block_inlines_one_file_referenced_twice():
+    """A diagram on both sides of a note shares one entry in the media dict.
+
+    Task 9 builds a single flat dict for the whole note, so the same filename
+    reaches this from more than one field -- and a real cloze note with a
+    figure on front and back is exactly that shape.
+    """
+    tag = '<img src="paste-abc.jpg">'
+    html = render_html([{
+        "type": "note",
+        "fields": [("Text", tag), ("Answer", f"{tag} and {tag}")],
+        "media": {"paste-abc.jpg": b"JPEGDATA"},
+    }])
+    assert html.count("data:image/jpeg;base64,SlBFR0RBVEE=") == 3
+    assert "paste-abc.jpg" not in html
+
+
 def test_note_block_shows_a_title_when_given_one():
     html = render_html([{
         "type": "note",
@@ -409,4 +426,4 @@ def test_note_block_leaves_unrecognised_media_suffix_alone():
         "media": {"note.tiff": b"TIFFDATA"},
     }])
     assert "note.tiff" in html
-    assert "data:image/png" not in html
+    assert "data:" not in html
