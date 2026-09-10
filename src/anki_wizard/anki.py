@@ -7,7 +7,6 @@ exception type. Protocol errors arrive in the JSON body with HTTP 200.
 """
 
 import base64
-import binascii
 from typing import Any
 
 import requests
@@ -194,7 +193,7 @@ class AnkiClient:
             return None
         try:
             return base64.b64decode(encoded, validate=True)
-        except (binascii.Error, TypeError) as exc:
+        except (ValueError, TypeError) as exc:
             raise AnkiError(
                 f"retrieveMediaFile: {filename!r} at {self.url} did not decode as "
                 f"base64: {exc}. Response began: {str(encoded)[:_BODY_EXCERPT]!r}"

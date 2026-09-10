@@ -233,6 +233,24 @@ def test_retrieve_media_file_raises_anki_error_on_malformed_payload():
             client.retrieve_media_file("figure.png")
 
 
+def test_retrieve_media_file_raises_anki_error_on_non_ascii_payload():
+    """A character outside Latin-1 fails encoding before base64 ever runs.
+
+    That raises a plain ValueError rather than binascii.Error, a distinct
+    path from the malformed-payload case above -- catching only
+    binascii.Error would let this one escape uncontained. Reachable in
+    practice: JSON carries non-ASCII natively, so something other than
+    AnkiConnect answering on this port could return a localized error string.
+    """
+    with FakeAnki() as fake:
+        fake.set_response(
+            "retrieveMediaFile", "Fehler: Datei nicht gefunden — überprüfen"
+        )
+        client = AnkiClient(fake.url)
+        with pytest.raises(AnkiError, match="figure"):
+            client.retrieve_media_file("figure.png")
+
+
 def test_create_model_sends_fields_templates_and_css():
     with FakeAnki() as fake:
         fake.set_response("createModel", {"name": "Basic with Why"})
