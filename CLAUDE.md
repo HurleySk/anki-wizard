@@ -195,6 +195,14 @@ backslashes. But keep it to a bare symbol or a short expression: entities and
 escaped tags landing inside a math span are what silently break MathJax, and a
 formula that fails to typeset disappears from the page rather than erroring.
 
+**A `why` is prose, and so is a caption.** The same rules apply, and one more
+that applies to all three: math is typeset only inside `\(...\)`. A why that
+reads "variances add to n sigma^2 before the 1/n^2" is exactly the terminal
+LaTeX the pad exists to replace, landing on the pad. Write
+`\(n\sigma^2\)` and `\(1/n^2\)`. `render.py` refuses a caret, a subscript,
+a `Var(` or `E[`, or a bare `\sigma` outside delimiters, and an unbalanced
+delimiter, because every one of those renders as text with no error anywhere.
+
 Prefer a `steps` block over prose for a derivation, and use each step's `why` to
 name the justification. A derivation whose steps are unjustified teaches the
 manipulation without the reason, which is the failure mode the pad exists to fix.

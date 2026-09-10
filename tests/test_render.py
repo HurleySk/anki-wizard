@@ -88,10 +88,10 @@ def test_a_step_can_carry_its_justification():
     html = render_html([{
         "type": "steps",
         "steps": [
-            {"tex": r"\mathbb{E}[X^2] = \mathbb{E}[X]", "why": "X is 0 or 1, so X^2 = X"},
+            {"tex": r"\mathbb{E}[X^2] = \mathbb{E}[X]", "why": r"X is 0 or 1, so \(X^2 = X\)"},
         ],
     }])
-    assert "X is 0 or 1, so X^2 = X" in html
+    assert r"X is 0 or 1, so \(X^2 = X\)" in html
 
 
 def test_step_justification_is_escaped():
@@ -529,3 +529,57 @@ def test_note_block_leaves_unrecognised_media_suffix_alone():
     }])
     assert "note.tiff" in html
     assert "data:" not in html
+
+
+def test_ascii_math_in_prose_is_refused():
+    """Prose is typeset only inside \\(...\\), so bare ASCII math reads as text.
+
+    "n sigma^2" and "1/n^2" landed on a real pad in a step's why, and the
+    page loaded fine: the failure is silent, like markup in prose, so it is
+    worth stopping for at render time.
+    """
+    with pytest.raises(ValueError, match=r"sigma\^2"):
+        render_html([{"type": "prose", "text": "variances add to n sigma^2"}])
+    with pytest.raises(ValueError, match=r"X_i"):
+        render_html([{"type": "prose", "text": "sum the X_i first"}])
+    with pytest.raises(ValueError, match=r"Var\("):
+        render_html([{"type": "prose", "text": "then Var(X) after scaling"}])
+    with pytest.raises(ValueError, match=r"\\\\sigma"):
+        render_html([{"type": "prose", "text": "the parameter \\sigma is fixed"}])
+
+
+def test_ascii_math_in_a_step_why_is_refused():
+    """The why is prose too, and it is where the real slip happened."""
+    with pytest.raises(ValueError, match=r"n\^2"):
+        render_html([{"type": "steps", "steps": [
+            {"tex": "x", "why": "before the 1/n^2 from the outer factor"},
+        ]}])
+
+
+def test_ascii_math_in_a_caption_is_refused():
+    with pytest.raises(ValueError, match=r"n\^2"):
+        render_html([{"type": "image", "data": b"x", "mime": "image/png",
+                      "caption": "scaled by 1/n^2"}])
+
+
+def test_math_inside_delimiters_is_not_mistaken_for_ascii_math():
+    """Delimited math is exactly what the guard is asking for."""
+    html = render_html([
+        {"type": "prose", "text": r"variances add to \(n\sigma^2\), then \(X_i\)"},
+        {"type": "prose", "text": r"displayed \[a^2 \mathrm{Var}(X)\] here"},
+        {"type": "steps", "steps": [{"tex": "x", "why": r"since \(1/n^2\) is small"}]},
+    ])
+    assert r"\(n\sigma^2\)" in html
+
+
+def test_unbalanced_math_delimiters_are_refused():
+    """MathJax leaves an unclosed span untypeset, with no error anywhere."""
+    with pytest.raises(ValueError, match="unbalanced"):
+        render_html([{"type": "prose", "text": r"the mean \(\mu of X"}])
+
+
+def test_ordinary_prose_is_not_mistaken_for_ascii_math():
+    """Identifiers, ratios, and words that happen to be Greek letters stay."""
+    html = render_html([{"type": "prose", "text":
+        "set pad_viewer in config.yaml; the beta distribution; 3/4 of them; a < b"}])
+    assert "pad_viewer" in html

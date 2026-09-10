@@ -111,8 +111,7 @@ def _render_block(block: dict) -> str:
     if kind == "prose":
         # Escaped because prose is text: a stray "<" must not open a tag. Math
         # delimiters are backslash sequences, which escaping leaves alone.
-        _reject_markup(block["text"])
-        return f"<p>{escape(block['text'])}</p>"
+        return f"<p>{_prose(block['text'])}</p>"
     if kind == "math":
         return f"<p>\\[{block['tex']}\\]</p>"
     if kind == "steps":
@@ -140,6 +139,19 @@ _MARKUP = re.compile(
 )
 
 
+def _prose(text: str) -> str:
+    """Plain text made safe for the page, refused if it was not plain text.
+
+    Every prose-shaped string -- a paragraph, a step's why, a caption -- goes
+    through here, so a guard added once covers all of them. The why was the
+    gap: it was escaped like prose but never checked like prose, and that is
+    where ASCII math first slipped through.
+    """
+    _reject_markup(text)
+    _reject_ascii_math(text)
+    return escape(text)
+
+
 def _reject_markup(text: str) -> None:
     """Fail on markup in prose, which escaping would render as visible source.
 
@@ -156,6 +168,44 @@ def _reject_markup(text: str) -> None:
         )
 
 
+# Math that only typesets inside \\(...\\): a caret or subscript on a symbol, a
+# named function applied to something, or a bare TeX command. Checked with the
+# delimited spans removed, so \\(n\\sigma^2\\) is exactly what passes. Deliberately
+# not matching Greek names as words -- "the beta distribution" is prose -- nor
+# underscores inside identifiers, since a config key is prose too.
+_DELIMITED_MATH = re.compile(r"\\\(.*?\\\)|\\\[.*?\\\]", re.S)
+_STRAY_DELIMITER = re.compile(r"\\[()\[\]]")
+_ASCII_MATH = re.compile(
+    r"[\w)]+\^[\w{(]+"                      # sigma^2, n^2, a^{-1}
+    r"|(?<![\w])[A-Za-z]_[\w{]+"             # X_i, x_1
+    r"|\b(?:sqrt|exp|log|E|Var|Cov|sd|SD)[(\[]"  # sqrt(, E[, Var(
+    r"|\\[A-Za-z]+"                          # \sigma with no delimiters
+)
+
+
+def _reject_ascii_math(text: str) -> None:
+    """Fail on math that is not delimited, which the page would show as text.
+
+    "n sigma^2" reads as prose to the renderer and as a mistake to the reader,
+    and nothing errors in between. An unbalanced delimiter is the same failure
+    from the other side: MathJax leaves the span untypeset, silently.
+    """
+    outside = _DELIMITED_MATH.sub(" ", text)
+    stray = _STRAY_DELIMITER.search(outside)
+    if stray:
+        raise ValueError(
+            f"unbalanced math delimiter {stray.group()!r} in prose; MathJax "
+            "would leave that span untypeset."
+        )
+    found = _ASCII_MATH.search(outside)
+    if found:
+        raise ValueError(
+            f"prose is typeset only inside \\(...\\), so {found.group()!r} would "
+            "render as plain text. Wrap the expression in inline math "
+            "delimiters, or move it to a math block."
+        )
+
+
 def _render_step(number: int, step: dict) -> str:
     row = (
         f'<div class="step"><span class="step-num">{number}</span>'
@@ -163,7 +213,7 @@ def _render_step(number: int, step: dict) -> str:
     )
     why = step.get("why")
     if why:
-        row += f'\n<div class="step-why">{escape(why)}</div>'
+        row += f'\n<div class="step-why">{_prose(why)}</div>'
     return row
 
 
@@ -232,7 +282,7 @@ def _render_image(block: dict) -> str:
 
     encoded = base64.b64encode(data).decode("ascii")
     caption = block.get("caption")
-    caption_html = f"\n<figcaption>{escape(caption)}</figcaption>" if caption else ""
+    caption_html = f"\n<figcaption>{_prose(caption)}</figcaption>" if caption else ""
     alt = escape(block.get("alt", ""))
     return (
         f'<figure><img src="data:{mime};base64,{encoded}" alt="{alt}">'
@@ -248,7 +298,7 @@ def _render_figure(block: dict) -> str:
     encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
 
     caption = block.get("caption")
-    caption_html = f"\n<figcaption>{escape(caption)}</figcaption>" if caption else ""
+    caption_html = f"\n<figcaption>{_prose(caption)}</figcaption>" if caption else ""
     return (
         f'<figure><img src="data:image/png;base64,{encoded}" alt="">'
         f"{caption_html}</figure>"
@@ -310,7 +360,7 @@ def _render_animation(block: dict) -> str:
     player = _ICON.sub(_icon_glyph, player)
 
     caption = block.get("caption")
-    caption_html = f"\n<figcaption>{escape(caption)}</figcaption>" if caption else ""
+    caption_html = f"\n<figcaption>{_prose(caption)}</figcaption>" if caption else ""
     return f"<figure>{player}{caption_html}</figure>"
 
 
