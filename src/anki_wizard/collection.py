@@ -262,18 +262,29 @@ def list_decks(client: AnkiClient) -> dict:
 
 
 def _unterminated_deletion(text: str) -> bool:
-    """Whether `text` has more deletion openers than closers.
+    """Whether `text`'s deletion braces fail to pair off in order.
 
     cloze_numbers reads only "{{cN::" and deliberately never matches the
     closing "}}" (see cloze.py's comment), so a deletion truncated mid-field
     -- "{{c1::mean" with no close -- still reports {1}, identical to the
     intact field. That defeats the ordinal-diff guard below: nothing looks
     lost because the ordinal is still there, just inside markup that no
-    longer describes a real deletion. A field with more "{{" than "}}" is
-    malformed regardless of what any ordinal says, so it is caught here,
+    longer describes a real deletion. So malformed bracing is caught here,
     separately from and before the ordinal comparison.
+
+    Walked rather than counted. A bare count nets a surplus closer earlier in
+    the field against a truncation later, and a surplus closer is ordinary
+    here: deletions routinely end in MathJax closing a set or a fraction, so
+    "{{c1::a}}}} {{c2::b" counts even while c2 is in fact cut off. Walking
+    keeps the two from cancelling. Single braces are not tokens, so the
+    "\\frac{a}{b}" inside a deletion is untouched.
     """
-    return text.count("{{") > text.count("}}")
+    depth = 0
+    for token in re.findall(r"\{\{|\}\}", text):
+        depth += 1 if token == "{{" else -1
+        if depth < 0:
+            return True
+    return depth != 0
 
 
 def edit_note(
@@ -381,16 +392,27 @@ def edit_note(
 
     client.update_note_fields_by_name(note_id, changed)
 
-    ledger_path = paths.ledger_file(deck_slug(note["deck"]))
-    ledger_path.parent.mkdir(parents=True, exist_ok=True)
-    adopt_note(
-        ledger_path,
-        note_id=note_id,
-        model=note["model"],
-        deck=note["deck"],
-        fields=note["field_names"],
-    )
-    _record_edit(ledger_path, note_id, sorted(changed))
+    # The note is edited in Anki from here on, and that cannot be undone. A
+    # ledger failure below therefore escapes carrying the diff rather than
+    # being swallowed: the harness cannot repair the split, so it must not
+    # hide it. push_to_anki strikes the same bargain in _save_or_raise.
+    try:
+        ledger_path = paths.ledger_file(deck_slug(note["deck"]))
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        adopt_note(
+            ledger_path,
+            note_id=note_id,
+            model=note["model"],
+            deck=note["deck"],
+            fields=note["field_names"],
+        )
+        _record_edit(ledger_path, note_id, sorted(changed))
+    except Exception as exc:
+        raise ValueError(
+            f"note {note_id} was edited in Anki but the ledger at "
+            f"{ledger_path} could not record it ({exc}). The edit stands, "
+            f"and these fields changed: {sorted(changed)}"
+        ) from exc
 
     return {
         "note_id": note_id,
@@ -413,7 +435,7 @@ def _record_edit(ledger_path, note_id: int, fields: list[str]) -> None:
         entries = load_ledger(ledger_path)
         for index, entry in enumerate(entries):
             if isinstance(entry, AdoptedNote) and entry.note_id == note_id:
-                entries[index] = record(entry, "edited")
+                entries[index] = record(entry, "edited", detail={"fields": fields})
                 save_ledger(ledger_path, entries)
                 return
     raise ValueError(

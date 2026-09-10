@@ -564,6 +564,31 @@ def test_a_truncated_cloze_deletion_is_refused_even_though_ordinals_match(tmp_pa
     assert not any(r["action"] == "updateNoteFields" for r in fake.requests)
 
 
+def test_a_stray_closer_cannot_mask_a_truncated_deletion(tmp_path):
+    """A surplus "}}" earlier in the field must not cancel a truncation later.
+
+    Deletions here routinely end in MathJax closing a set or a fraction, so a
+    field whose brace counts are already skewed is the normal case. Counting
+    openers against closers nets the two out and lets c2's truncation through
+    with its ordinal still reported, which is the bypass this walks to close.
+    """
+    from anki_wizard.collection import edit_note
+
+    with FakeAnki() as fake:
+        edit_fake(fake)
+        client = AnkiClient(fake.url)
+
+        with pytest.raises(ValueError, match="unterminated"):
+            edit_note(
+                1739985246842,
+                {"Text": "{{c1::a}}}} {{c2::b"},
+                client,
+                paths=Paths(root=tmp_path),
+            )
+
+    assert not any(r["action"] == "updateNoteFields" for r in fake.requests)
+
+
 def test_a_truncated_cloze_deletion_is_refused_even_with_force(tmp_path):
     """force is for a deliberate drop of a whole deletion, not for malformed
 

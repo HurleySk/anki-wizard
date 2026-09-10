@@ -22,17 +22,28 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def record(entry: Card | AdoptedNote, action: str, **changes) -> Card | AdoptedNote:
+def record(
+    entry: Card | AdoptedNote,
+    action: str,
+    detail: dict | None = None,
+    **changes,
+) -> Card | AdoptedNote:
     """Return a copy of `entry` with `changes` applied and `action` in its history.
 
     Every change to a ledger entry goes through here so the history stays an
     audit trail: nothing changes a field without saying what happened and when.
     Adopted notes get the same treatment as authored cards -- both are
     dataclasses carrying a history list, which is all this needs.
+
+    `detail` is merged into the history entry rather than set on the entry, for
+    facts about the event that are not fields of the thing: which fields an
+    edit touched, say. An adopted note stores no content, so what changed is
+    the only substantive thing its history can carry.
     """
-    return replace(
-        entry, history=entry.history + [{"at": _now(), "action": action}], **changes
-    )
+    event = {"at": _now(), "action": action}
+    if detail:
+        event |= detail
+    return replace(entry, history=entry.history + [event], **changes)
 
 
 def _load_card(r: dict) -> Card:
