@@ -319,6 +319,15 @@ Naming follows the convention already in this collection:
 Pad the lecture number. Anki sorts deck names as text, so an unpadded scheme
 gives `L1, L10, L2` past nine.
 
+**Worked problems go in a `Problems` child of their lecture**, so
+`Unit I: Introduction to Statistics::L02 Probability Redux::Problems`. The
+split exists so Anki introduces a lecture's concept cards before the problems
+that use them, and so the two can carry different daily limits. A card whose
+front is a problem statement (tagged `worked-problem`) files there; a concept
+card drawn from a problem's solution, such as a formula the solution used,
+files in the lecture itself. A problem that spans lectures -- a problem set,
+a unit review -- goes in `Problems` directly under the unit.
+
 Refiling a pushed card is `revise_card(..., lecture=...)`, which moves it in
 Anki with its scheduling intact -- review history lives on the card, not the
 deck. `scripts/assign_lecture.py <slug> "<path>"` does a whole slug at once and
