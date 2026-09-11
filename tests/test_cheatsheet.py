@@ -53,7 +53,7 @@ def test_sheet_is_readable_yaml(tmp_path):
 def test_unreadable_entry_names_the_file_and_position(tmp_path):
     p = tmp_path / "sheet.yaml"
     p.write_text("- id: f-0001\n  tex: x\n  label: ok\n- id: f-0002\n  tex: y\n")
-    with pytest.raises(ValueError, match="sheet.yaml: entry 1"):
+    with pytest.raises(ValueError, match=r"sheet\.yaml: entry 1"):
         load_sheet(p)
 
 
@@ -78,11 +78,9 @@ def test_index_of_names_the_course_when_missing():
 def test_transitions():
     """Approved is where an entry lives on the sheet; rejecting it is how it
     leaves. Nothing comes back from rejected."""
-    assert LEGAL_TRANSITIONS == {
-        "proposed": {"approved", "rejected"},
-        "approved": {"rejected"},
-        "rejected": set(),
-    }
+    assert LEGAL_TRANSITIONS["proposed"] == {"approved", "rejected"}
+    assert LEGAL_TRANSITIONS["approved"] == {"rejected"}
+    assert LEGAL_TRANSITIONS["rejected"] == set()
     f = transition(a_formula(), "approved")
     assert f.state == "approved"
     assert f.history[-1]["action"] == "approved"

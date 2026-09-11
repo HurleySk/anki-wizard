@@ -130,3 +130,270 @@ def edit_formula(
     if all(getattr(formula, k) == v for k, v in new.items()):
         return formula
     return record(formula, "edited", **new)
+
+
+# --- tools -------------------------------------------------------------------
+
+_DELIMITERS = ("\\[", "\\]", "\\(", "\\)", "$")
+
+
+def _check_content(tex: str | None, label: str | None, note: str | None) -> None:
+    """Refuse content the page would render wrong, before it is written.
+
+    The page is rebuilt on every change to the sheet, so a label that fails
+    the prose guard would fail on every later edit too, long after anyone
+    could say which proposal put it there. tex is checked the other way: the
+    renderer adds display delimiters, so a proposal carrying its own would
+    typeset as nested delimiters, which MathJax shows as source.
+    """
+    if tex is not None:
+        if not tex.strip():
+            raise ValueError("a formula needs a non-empty tex")
+        if any(d in tex for d in _DELIMITERS):
+            raise ValueError(
+                f"tex is bare TeX; the renderer adds the display delimiters, so "
+                f"{tex!r} must not carry its own"
+            )
+    if label is not None:
+        if not label.strip():
+            raise ValueError("a formula needs a non-empty label")
+        check_prose(label)
+    if note is not None:
+        check_prose(note)
+
+
+def _normalise_tex(tex: str) -> str:
+    # Whitespace never changes what TeX typesets, so it must not make two
+    # copies of a formula count as different.
+    return "".join(tex.split())
+
+
+def _source_for(slug: str | None, section_id: str | None, paths: Paths) -> CardSource | None:
+    if slug is None:
+        if section_id is not None:
+            raise ValueError("a section needs a slug to belong to")
+        return None
+    if section_id is None:
+        return CardSource(slug=slug)
+    # Late import: tools imports nothing from here, but keeping the dependency
+    # one-way at module load is what makes that easy to keep true.
+    from anki_wizard.tools import _require_section
+
+    outline, section = _require_section(slug, section_id, paths)
+    return CardSource(slug=slug, section=section.id, pages=outline.page_numbers(section))
+
+
+def propose_formulas(
+    deck: str,
+    proposals: list[dict],
+    paths: Paths,
+    slug: str | None = None,
+    section_id: str | None = None,
+    default_tags: list[str] | None = None,
+) -> dict:
+    """Append proposed formulas to the course's sheet.
+
+    Each proposal is a dict with `tex` and `label`, and optional `note`,
+    `lecture`, and `tags`. `slug` and `section_id` say where the batch came
+    from, the way a card's source does; both are optional because a formula
+    asked for in conversation has no document.
+
+    An exact repeat of a formula already on the sheet is refused, naming the
+    entry it repeats. That is the one duplicate a tool can catch; a near
+    duplicate is a curation question for the user.
+    """
+    for proposal in proposals:
+        _check_content(
+            proposal.get("tex", ""), proposal.get("label", ""), proposal.get("note")
+        )
+
+    source = _source_for(slug, section_id, paths)
+    tags = list(default_tags or [])
+
+    path = paths.cheatsheet_file(deck_slug(deck))
+    with locked(path):
+        formulas = load_sheet(path)
+        live = {
+            _normalise_tex(f.tex): f.id for f in formulas if f.state != "rejected"
+        }
+        added: list[Formula] = []
+        for proposal in proposals:
+            key = _normalise_tex(proposal["tex"])
+            if key in live:
+                raise ValueError(
+                    f"{proposal['tex']!r} is already on the sheet as {live[key]}"
+                )
+            if any(_normalise_tex(a.tex) == key for a in added):
+                raise ValueError(f"{proposal['tex']!r} appears twice in this batch")
+            formula = Formula(
+                id=next_formula_id(formulas + added),
+                tex=proposal["tex"],
+                label=proposal["label"],
+                note=proposal.get("note"),
+                lecture=proposal.get("lecture"),
+                tags=sorted(set(list(proposal.get("tags", [])) + tags)),
+                source=None
+                if source is None
+                else CardSource(source.slug, source.section, list(source.pages)),
+            )
+            added.append(record(formula, "proposed"))
+        save_sheet(path, formulas + added)
+    return {"added": len(added), "formulas": [asdict(f) for f in added]}
+
+
+def review_formulas(deck: str, decisions: dict, paths: Paths) -> dict:
+    """Apply approve, reject, and edit decisions, the grammar review_cards uses.
+
+    A decision is "approve", "reject", or {"edit": {...}, "then": ...}. The
+    page is rewritten afterwards so it never shows a state the sheet has left.
+    """
+    course = deck_slug(deck)
+    path = paths.cheatsheet_file(course)
+    with locked(path):
+        formulas = load_sheet(path)
+        updated: dict[str, str] = {}
+        for formula_id, decision in decisions.items():
+            index = index_of(formulas, formula_id, course)
+            formula = formulas[index]
+
+            if isinstance(decision, dict):
+                edits = decision.get("edit") or {}
+                if edits:
+                    _check_content(edits.get("tex"), edits.get("label"), edits.get("note"))
+                    formula = edit_formula(
+                        formula,
+                        tex=edits.get("tex"),
+                        label=edits.get("label"),
+                        note=edits.get("note"),
+                        tags=edits.get("tags"),
+                    )
+                follow_up = decision.get("then")
+            else:
+                follow_up = decision
+
+            if follow_up == "approve":
+                formula = transition(formula, "approved")
+            elif follow_up == "reject":
+                formula = transition(formula, "rejected")
+            elif follow_up is not None:
+                raise ValueError(f"unknown review action {follow_up!r}")
+
+            formulas[index] = formula
+            updated[formula_id] = formula.state
+
+        save_sheet(path, formulas)
+        _write_page(deck, formulas, paths)
+    return {"updated": updated}
+
+
+def revise_formula(
+    deck: str,
+    formula_id: str,
+    paths: Paths,
+    tex: str | None = None,
+    label: str | None = None,
+    note: str | None = None,
+    tags: list[str] | None = None,
+    lecture: str | None = None,
+) -> dict:
+    """Edit a formula in place, or refile it under another lecture."""
+    _check_content(tex, label, note)
+    course = deck_slug(deck)
+    path = paths.cheatsheet_file(course)
+    with locked(path):
+        formulas = load_sheet(path)
+        index = index_of(formulas, formula_id, course)
+        formula = edit_formula(formulas[index], tex=tex, label=label, note=note, tags=tags)
+        if lecture is not None and lecture != formula.lecture:
+            formula = record(formula, "refiled", lecture=lecture)
+        formulas[index] = formula
+        save_sheet(path, formulas)
+        _write_page(deck, formulas, paths)
+    return {"id": formula_id, "state": formula.state, "message": "formula revised"}
+
+
+def formula_blocks(
+    deck: str,
+    paths: Paths,
+    ids: list[str] | None = None,
+    state: str | None = None,
+) -> list[dict]:
+    """Pad blocks showing the sheet: a heading per lecture, a formula block each.
+
+    Unfiled entries come first under "General", then lectures in path order,
+    which the zero-padded numbering makes the course order. The id and state
+    ride along as meta except when showing approved entries alone -- that is
+    the printable sheet, where an id is noise.
+    """
+    course = deck_slug(deck)
+    formulas = load_sheet(paths.cheatsheet_file(course))
+    by_id = {f.id: f for f in formulas}
+    if ids is not None:
+        missing = [i for i in ids if i not in by_id]
+        if missing:
+            raise KeyError(f"no such formula for {course!r}: {', '.join(missing)}")
+        formulas = [by_id[i] for i in ids]
+    if state is not None:
+        formulas = [f for f in formulas if f.state == state]
+
+    return _blocks_for(formulas, show_meta=state != "approved")
+
+
+def _blocks_for(formulas: list[Formula], show_meta: bool) -> list[dict]:
+    groups: dict[str | None, list[Formula]] = {}
+    for formula in formulas:
+        groups.setdefault(formula.lecture, []).append(formula)
+    ordered = sorted(groups, key=lambda lecture: (lecture is not None, lecture or ""))
+
+    blocks: list[dict] = []
+    for lecture in ordered:
+        blocks.append({"type": "heading", "text": lecture or "General"})
+        for formula in groups[lecture]:
+            block = {"type": "formula", "label": formula.label, "tex": formula.tex}
+            if formula.note:
+                block["note"] = formula.note
+            if show_meta:
+                block["meta"] = f"{formula.id} \u00b7 {formula.state}"
+            blocks.append(block)
+    return blocks
+
+
+def _write_page(deck: str, formulas: list[Formula], paths: Paths) -> tuple[Path, int]:
+    """Render the approved entries to the course's stable page.
+
+    Derived from the sheet and rebuilt on every change, so the URL a user has
+    open in a tab is never behind the YAML.
+    """
+    approved = [f for f in formulas if f.state == "approved"]
+    # Rendered from the given list rather than re-read, so a caller inside the
+    # lock writes what it just saved.
+    blocks = _blocks_for(approved, show_meta=False)
+    page = paths.cheatsheet_page(deck_slug(deck))
+    write_text_atomic(page, render_html(blocks, title=deck.split("::")[0]))
+    return page, len(approved)
+
+
+def render_cheatsheet(
+    deck: str,
+    paths: Paths,
+    viewer: str = "vscode",
+    server_timeout_minutes: float = 30.0,
+) -> dict:
+    """Rebuild the course's printable sheet and report where to read it.
+
+    The page sits under the pad directory so the pad server serves it, at a
+    URL that stays the same across rebuilds. Printing it is the export.
+    """
+    path = paths.cheatsheet_file(deck_slug(deck))
+    with locked(path):
+        page, count = _write_page(deck, load_sheet(path), paths)
+    return {
+        "path": str(page),
+        "formulas": count,
+        **open_page(
+            page,
+            viewer=viewer,
+            idle_timeout_minutes=server_timeout_minutes,
+            root=paths.pad_dir(),
+        ),
+    }
