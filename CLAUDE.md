@@ -18,8 +18,10 @@ Test fixtures are generated on first run, so `pytest` works from a fresh clone.
 
 ## Architecture in one pass
 
-`tools.py` holds the eight tool functions. They take explicit arguments and have
-no dependency on the calling conversation, so an MCP server can wrap them
+`tools.py` holds the document tool functions; `collection.py` holds the ones
+that read the wider Anki collection, and `cheatsheet.py` the ones for the
+per-course formula sheet. All of them take explicit arguments and have no
+dependency on the calling conversation, so an MCP server can wrap them
 unchanged — keep them that way. `session.py` is the convenience layer that reads
 `config.yaml` once and supplies those arguments; it is where you add ergonomics,
 not behavior.
@@ -196,8 +198,10 @@ for the right block instead of marking prose up:
 
 - emphasis: rewrite the sentence, or let a `steps` block's `why` carry the aside
 - displayed math: a `math` block, never `\[...\]` hand-rolled into prose
-- structure: separate blocks, or a `figure`; there is no heading block, so a
-  short prose line naming the section is how a section gets named
+- structure: separate blocks, a `heading` block to name a section, or a
+  `figure`; a heading is prose and follows the same rules
+- a cheat sheet entry: a `formula` block (label, bare `tex`, optional `note`),
+  which is what `pad_formulas` and the sheet page emit
 - punctuation: type the character itself (-- and " and ...), never an entity
 
 Inline `\(...\)` inside prose does survive escaping, since the delimiters are
@@ -281,6 +285,50 @@ Set it at proposal time alongside `front` and `back`, or add one later with
 Pushing requires the `Basic with Why` note type in Anki. `NOTE_TYPE` in
 `anki.py` names it; `scripts/migrate_note_type.py` creates it and migrates
 existing notes.
+
+## The cheat sheet
+
+Each course has one sheet of key formulas, `cheatsheets/<course-slug>.yaml`,
+keyed on the configured deck and rendered to a stable, printable page. It is
+the opposite of a card: not one fact to recall, but the handful of results the
+course reaches for constantly, grouped by lecture, to be read whole.
+
+**Propose formulas only when the user asks.** Never as a side effect of
+carding a section, and never because a slide shows a formula. The user asks
+after a lecture or a problem set ("anything for the cheat sheet?"), or names
+one formula. A sheet is worth less the longer it gets, and whether it grows is
+their call. When asked, propose and stop: `review_formulas` is theirs, the
+same as for cards.
+
+**What belongs:** a formula the exam expects reproduced from memory and that
+gets used repeatedly, with its condition. \(\mathbb{E}[aX] = a\,\mathbb{E}[X]\)
+belongs. So does \(\mathrm{Var}(X+Y) = \mathrm{Var}(X) + \mathrm{Var}(Y)\),
+with `note` saying it needs independence, since the condition is what gets
+missed. A one-off identity from a worked example does not. Not every formula
+card is a sheet entry, and not every entry is a card: the sheet is for
+reaching, cards are for recalling.
+
+**Form.** `tex` is bare TeX in neutral symbols; the renderer adds the display
+delimiters, so a proposal carrying `\[` or `$` is refused. `label` names the
+result in a few words. `note` is one line or empty: the condition, the caveat,
+the case it does not cover. Both are prose in the pad's sense -- plain text,
+math only inside `\(...\)` -- and are checked when proposed, so a bad label
+fails in your hands rather than on every later rebuild of the page.
+
+**Confirm the lecture** exactly as for cards, and never invent one. Entries
+without a lecture render under General at the top, which is where a formula
+the whole course uses belongs.
+
+**Review on the pad.** `pad_formulas()` renders the proposals grouped by
+lecture with their ids; hand over the URL and stop. After the user's
+decisions, `cheatsheet()` rebuilds the printable page and returns its URL;
+hand that over too. The page is also rebuilt by every review and revision, so
+a tab the user has open is never behind the YAML.
+
+**Duplicates.** The tool refuses an exact repeat of a formula already on the
+sheet, naming the entry. A near duplicate -- the same result in different
+notation, a special case of one already there -- is a curation question for
+the user, not a silent merge or a quiet second entry.
 
 ## Lectures and subdecks
 

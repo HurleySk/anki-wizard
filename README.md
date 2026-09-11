@@ -48,6 +48,11 @@ Optionally create `config.yaml`:
 | `note_blocks(note_id, client)` | Pad blocks showing a note, with its media fetched and inlined. |
 | `card_blocks(slug, paths, ids, state)` | Pad blocks showing ledger cards, for putting proposals in front of the user. |
 | `edit_note(note_id, changes, client, paths, force)` | Edit a note this harness did not create, behind field-name and cloze guards. |
+| `propose_formulas(deck, proposals, paths, slug, section_id, default_tags)` | Add proposed formulas to the course's cheat sheet. Refuses an exact repeat. |
+| `review_formulas(deck, decisions, paths)` | Approve, reject, or edit proposed formulas; rebuilds the sheet page. |
+| `revise_formula(deck, formula_id, paths, ...)` | Edit or refile a formula; rebuilds the sheet page. |
+| `formula_blocks(deck, paths, ids, state)` | Pad blocks showing sheet entries grouped by lecture, for review. |
+| `render_cheatsheet(deck, paths, viewer)` | Rebuild the course's printable sheet and report its URL. |
 
 `Session` wraps all of these, reading `config.yaml` once so you do not pass
 `paths`, `deck`, and page caps by hand:
@@ -65,6 +70,10 @@ Optionally create `config.yaml`:
     s.pad_note(1739985246842)              # the card, rendered, with its images
     s.pad_cards("lecture")                 # the slug's proposals, rendered for review
     s.edit_note(1739985246842, {"Answer": "..."})
+    s.propose_formulas([...], lecture="Unit I: ...::L02 ...")
+    s.pad_formulas()                       # proposed formulas, rendered for review
+    s.review_formulas({"f-0001": "approve"})
+    s.cheatsheet()                         # the printable sheet, and its URL
 
 ## Cards from conversation
 
@@ -94,8 +103,9 @@ mathematics, and LaTeX source in a terminal is unreadable.
 This writes `pad/pad.html` and opens it. Block types are `prose`, `math`,
 `steps`, `figure` (a matplotlib figure, embedded), `animation` (a matplotlib
 `Animation`, embedded with a play/pause/step/scrub player), `image` (bytes or a
-path, embedded), and `note` (an Anki note, its cloze deletions revealed and its
-media inlined). The page stays a single file: frames and images are inlined, so
+path, embedded), `note` (an Anki note, its cloze deletions revealed and its
+media inlined), `heading` (a section name), and `formula` (a cheat sheet entry:
+label, displayed TeX, optional note). The page stays a single file: frames and images are inlined, so
 an animation of 30 to 60 frames costs roughly half a megabyte to a megabyte, and
 one that would exceed 8 MB is refused.
 
@@ -205,6 +215,43 @@ This needs the `Basic with Why` note type. `scripts/migrate_note_type.py`
 creates it and moves existing notes onto it, preserving content, tags, and
 review history; it is deck-scoped and safe to re-run.
 
+## The cheat sheet
+
+Cards test recall one fact at a time. The cheat sheet is the opposite artifact:
+one page per course holding the formulas the course reaches for again and
+again, grouped by lecture, meant to be printed and kept beside the problem
+set.
+
+Entries are proposed and reviewed like cards, but the agent proposes them only
+when asked -- after a lecture, after a problem set, or for one formula you
+name. A sheet is worth less the longer it gets, so growing it is your call.
+
+    s.propose_formulas(
+        [{"tex": r"\mathbb{E}[aX + b] = a\,\mathbb{E}[X] + b",
+          "label": "Linearity of expectation",
+          "note": r"Any constants \(a\), \(b\); no independence needed."}],
+        lecture="Unit I: Introduction to Statistics::L02 Probability Redux",
+    )
+    s.pad_formulas()                            # review on the pad
+    s.review_formulas({"f-0001": "approve"})
+    s.cheatsheet()                              # -> the page, and its URL
+
+`tex` is bare TeX, displayed by the renderer. `label` and `note` are plain
+text with math inside `\(...\)`, the same rule as pad prose, and are checked
+when proposed rather than when rendered. An exact repeat of a formula already
+on the sheet is refused, naming the entry it repeats.
+
+The sheet is per course -- the configured `deck` -- not per slug, so it
+gathers from every document and conversation in the course. Its page is
+served at a stable URL under the pad server,
+`http://127.0.0.1:8899/cheatsheets/<course-slug>.html`, and is rebuilt on
+every approve, reject, or edit, so a tab left open is never behind the file.
+Print it from the browser for a copy on paper; the print layout is two
+columns and never splits a formula across a page.
+
+Rejecting an approved entry is how it leaves the sheet. Rows are never
+deleted, so the YAML keeps the history the way the card ledger does.
+
 ## How math is handled
 
 Cards use MathJax, which Anki renders natively: `\(x^2\)` inline and `\[...\]`
@@ -248,6 +295,8 @@ never accept does not strand its section: rejecting it settles the section.
       outline.json    section map
       cursor.json     progress
     cards/<slug>.yaml the card ledger
+    cheatsheets/<course-slug>.yaml       the cheat sheet, keyed on the deck
+    pad/cheatsheets/<course-slug>.html   its printable page, rebuilt on every change
 
 The ledger is the source of truth. Every card records where it came from and,
 once pushed, its Anki note id — which is what lets a card be revised later
@@ -260,6 +309,12 @@ Card lifecycle:
     proposed → rejected
     approved → rejected
     pushed   → orphaned    (note deleted in Anki)
+
+Formula lifecycle:
+
+    proposed → approved    (on the sheet)
+    proposed → rejected
+    approved → rejected    (off the sheet)
 
 ## When things go wrong
 
