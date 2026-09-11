@@ -583,3 +583,69 @@ def test_ordinary_prose_is_not_mistaken_for_ascii_math():
     html = render_html([{"type": "prose", "text":
         "set pad_viewer in config.yaml; the beta distribution; 3/4 of them; a < b"}])
     assert "pad_viewer" in html
+
+
+def test_heading_block_names_a_section():
+    html = render_html([{"type": "heading", "text": "L02 Probability Redux"}])
+    assert "<h2>L02 Probability Redux</h2>" in html
+
+
+def test_heading_block_is_prose():
+    """A heading is text like a caption: escaped, and refused when it is not plain."""
+    html = render_html([{"type": "heading", "text": "a < b"}])
+    assert "<h2>a &lt; b</h2>" in html
+    with pytest.raises(ValueError, match="plain text"):
+        render_html([{"type": "heading", "text": "<b>Unit</b>"}])
+    with pytest.raises(ValueError, match="typeset only inside"):
+        render_html([{"type": "heading", "text": "moments of X_i"}])
+
+
+def test_formula_block_shows_label_tex_and_note():
+    html = render_html([{
+        "type": "formula",
+        "label": "Scaling",
+        "tex": r"\mathbb{E}[aX] = a\,\mathbb{E}[X]",
+        "note": r"Any constant \(a\); no independence needed.",
+    }])
+    assert '<div class="formula">' in html
+    assert '<div class="formula-label">Scaling' in html
+    assert r"\[\mathbb{E}[aX] = a\,\mathbb{E}[X]\]" in html
+    assert r'<div class="formula-note">Any constant \(a\); no independence needed.</div>' in html
+
+
+def test_formula_block_omits_an_absent_note_and_meta():
+    html = render_html([{"type": "formula", "label": "Scaling", "tex": "x"}])
+    assert 'class="formula-note"' not in html
+    assert 'class="formula-meta"' not in html
+
+
+def test_formula_block_shows_meta_beside_the_label():
+    """On a review page the id is how the user names the entry back."""
+    html = render_html([{
+        "type": "formula", "label": "Scaling", "tex": "x", "meta": "f-0003 · proposed",
+    }])
+    assert '<span class="formula-meta">f-0003 · proposed</span>' in html
+
+
+def test_formula_label_and_note_are_prose():
+    with pytest.raises(ValueError, match="typeset only inside"):
+        render_html([{"type": "formula", "label": "Var(X) scaling", "tex": "x"}])
+    with pytest.raises(ValueError, match="plain text"):
+        render_html([{"type": "formula", "label": "ok", "tex": "x", "note": "<i>iid</i>"}])
+
+
+def test_page_has_print_rules_that_keep_a_formula_whole():
+    html = render_html([{"type": "formula", "label": "ok", "tex": "x"}])
+    assert "@media print" in html
+    assert "break-inside: avoid" in html
+
+
+def test_check_prose_is_the_guard_the_renderer_uses():
+    """Exposed so a formula's label fails at proposal time, not at render time."""
+    from anki_wizard.render import check_prose
+
+    check_prose(r"the mean \(\mu\)")
+    with pytest.raises(ValueError, match="typeset only inside"):
+        check_prose("n sigma^2")
+    with pytest.raises(ValueError, match="plain text"):
+        check_prose("a &mdash; b")

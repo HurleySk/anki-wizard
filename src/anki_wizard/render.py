@@ -93,6 +93,23 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 2.5rem 0; }
   color: var(--muted); margin: 0 0 0.35rem;
 }
 .note-field img { max-width: 100%; height: auto; }
+h2 { font-size: 1.1rem; margin: 2.5rem 0 1rem; }
+.formula { margin: 0 0 1.4rem; break-inside: avoid; }
+.formula-label { font-weight: 600; }
+.formula-meta {
+  color: var(--muted);
+  font: 500 12px/1 ui-monospace, monospace;
+  margin-left: 0.6rem;
+}
+.formula-note { color: var(--muted); font-size: 14px; font-style: italic; }
+/* The cheat sheet is meant to be printed: two columns, no margins, and a
+   formula never split across a page. */
+@media print {
+  body { font-size: 12px; padding: 0; }
+  main { max-width: none; column-count: 2; column-gap: 2rem; }
+  h2 { break-after: avoid; margin-top: 1.2rem; }
+  .formula { margin-bottom: 0.8rem; }
+}
 """
 
 
@@ -127,6 +144,10 @@ def _render_block(block: dict) -> str:
         return _render_animation(block)
     if kind == "note":
         return _render_note(block)
+    if kind == "heading":
+        return f"<h2>{_prose(block['text'])}</h2>"
+    if kind == "formula":
+        return _render_formula(block)
     raise ValueError(f"unknown block type: {kind!r}")
 
 
@@ -147,9 +168,19 @@ def _prose(text: str) -> str:
     gap: it was escaped like prose but never checked like prose, and that is
     where ASCII math first slipped through.
     """
+    check_prose(text)
+    return escape(text)
+
+
+def check_prose(text: str) -> None:
+    """Refuse text the pad would render wrong, without rendering it.
+
+    Public so a cheat sheet entry's label can be checked when it is proposed:
+    the page is written again on every change, and a label that fails there
+    would fail long after anyone could say which proposal was at fault.
+    """
     _reject_markup(text)
     _reject_ascii_math(text)
-    return escape(text)
 
 
 def _reject_markup(text: str) -> None:
@@ -215,6 +246,26 @@ def _render_step(number: int, step: dict) -> str:
     if why:
         row += f'\n<div class="step-why">{_prose(why)}</div>'
     return row
+
+
+def _render_formula(block: dict) -> str:
+    """A cheat sheet entry: label, the formula displayed, an optional note.
+
+    The meta slot carries the id and state on a review page so the user can
+    name the entry back in a decision; the printable sheet leaves it out.
+    """
+    label = _prose(block["label"])
+    meta = block.get("meta")
+    if meta:
+        label += f'<span class="formula-meta">{escape(meta)}</span>'
+    html = (
+        f'<div class="formula"><div class="formula-label">{label}</div>'
+        f"\\[{block['tex']}\\]"
+    )
+    note = block.get("note")
+    if note:
+        html += f'<div class="formula-note">{_prose(note)}</div>'
+    return html + "</div>"
 
 
 # A media type and subtype, which is all a data URI here ever needs. Narrow on
