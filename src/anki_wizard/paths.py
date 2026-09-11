@@ -41,6 +41,17 @@ class Paths:
         # output, the other a name the user typed for their own ingest.
         return self.root / "cards" / f"{slug}.yaml"
 
+    def cheatsheet_file(self, course_slug: str) -> Path:
+        # Keyed on the course rather than a source: one sheet gathers formulas
+        # from every document and conversation in a course. The slug comes
+        # from deck_slug, so its charset already keeps it inside cheatsheets/.
+        return self.root / "cheatsheets" / f"{course_slug}.yaml"
+
+    def cheatsheet_page(self, course_slug: str) -> Path:
+        # Under pad/ so the pad server, rooted there, serves it at a stable URL
+        # the way it serves kept notes.
+        return self.pad_dir() / "cheatsheets" / f"{course_slug}.html"
+
     def config_file(self) -> Path:
         return self.root / "config.yaml"
 

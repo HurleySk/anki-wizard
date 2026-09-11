@@ -1,4 +1,12 @@
-from anki_wizard.models import AdoptedNote, Card, CardSource, Cursor, Outline, Section
+from anki_wizard.models import (
+    AdoptedNote,
+    Card,
+    CardSource,
+    Cursor,
+    Formula,
+    Outline,
+    Section,
+)
 
 
 def test_card_source_from_document():
@@ -75,5 +83,23 @@ def test_adopted_note_holds_a_reference_not_content():
 def test_adopted_notes_do_not_share_mutable_defaults():
     a = AdoptedNote(note_id=1, model="Basic", deck="D", fields=["Front"])
     b = AdoptedNote(note_id=2, model="Basic", deck="D", fields=["Front"])
+    a.tags.append("x")
+    assert b.tags == []
+
+
+def test_formula_defaults():
+    """A formula starts proposed, unfiled, and with its own history."""
+    f = Formula(id="f-0001", tex=r"\mathbb{E}[aX] = a\,\mathbb{E}[X]", label="Scaling")
+    assert f.state == "proposed"
+    assert f.note is None
+    assert f.lecture is None
+    assert f.source is None
+    assert f.tags == []
+    assert f.history == []
+
+
+def test_formulas_do_not_share_mutable_defaults():
+    a = Formula(id="f-0001", tex="x", label="a")
+    b = Formula(id="f-0002", tex="y", label="b")
     a.tags.append("x")
     assert b.tags == []

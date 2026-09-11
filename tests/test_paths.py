@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from anki_wizard.paths import Paths, deck_slug
@@ -71,3 +73,20 @@ def test_deck_slug_rejects_a_name_with_nothing_usable():
     """A slug becomes a filename, so an empty one would write to cards/.yaml."""
     with pytest.raises(ValueError, match="usable"):
         deck_slug("::")
+
+
+def test_cheatsheet_paths_are_per_course():
+    """The sheet is course state, so it keys on the deck slug, not a source slug."""
+    p = Paths(root=Path("/tmp/x"))
+    assert p.cheatsheet_file("intro-to-probability") == Path(
+        "/tmp/x/cheatsheets/intro-to-probability.yaml"
+    )
+    assert p.cheatsheet_page("intro-to-probability") == Path(
+        "/tmp/x/pad/cheatsheets/intro-to-probability.html"
+    )
+
+
+def test_cheatsheet_page_lives_under_the_pad():
+    """The pad server is rooted at pad/, so a page under it gets a stable URL."""
+    p = Paths(root=Path("/tmp/x"))
+    assert p.pad_dir() in p.cheatsheet_page("stats").parents

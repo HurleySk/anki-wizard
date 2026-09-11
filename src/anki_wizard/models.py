@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 CardState = Literal["proposed", "approved", "rejected", "pushed", "orphaned"]
+FormulaState = Literal["proposed", "approved", "rejected"]
 Structure = Literal["sections", "slides", "pages"]
 
 
@@ -36,6 +37,28 @@ class Card:
     state: CardState = "proposed"
     tags: list[str] = field(default_factory=list)
     anki_note_id: int | None = None
+    history: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class Formula:
+    """One entry on a course's cheat sheet.
+
+    `tex` is bare TeX, displayed by the renderer; `label` and `note` are prose
+    in the pad's sense, plain text with math only inside \\(...\\). The note is
+    for the condition a formula needs, which is the part that gets missed.
+    Approved is the terminal good state -- there is no push, the sheet is the
+    destination -- and rejecting an approved entry is how it leaves the sheet.
+    """
+
+    id: str
+    tex: str
+    label: str
+    note: str | None = None
+    lecture: str | None = None
+    tags: list[str] = field(default_factory=list)
+    source: CardSource | None = None
+    state: FormulaState = "proposed"
     history: list[dict] = field(default_factory=list)
 
 

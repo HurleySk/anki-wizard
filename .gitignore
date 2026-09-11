@@ -7,6 +7,7 @@ docs/superpowers/
 # Ingested sources and generated state
 sources/
 cards/
+cheatsheets/
 config.yaml
 
 # Python
