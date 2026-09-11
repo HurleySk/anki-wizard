@@ -104,8 +104,8 @@ This writes `pad/pad.html` and opens it. Block types are `prose`, `math`,
 `steps`, `figure` (a matplotlib figure, embedded), `animation` (a matplotlib
 `Animation`, embedded with a play/pause/step/scrub player), `image` (bytes or a
 path, embedded), `note` (an Anki note, its cloze deletions revealed and its
-media inlined), `heading` (a section name), and `formula` (a cheat sheet entry:
-label, displayed TeX, optional note). The page stays a single file: frames and images are inlined, so
+media inlined), `heading` (a section name), and `formula` (a cheat sheet
+entry: label, displayed TeX, optional note). The page stays a single file: frames and images are inlined, so
 an animation of 30 to 60 frames costs roughly half a megabyte to a megabyte, and
 one that would exceed 8 MB is refused.
 

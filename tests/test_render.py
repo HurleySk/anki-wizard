@@ -590,14 +590,17 @@ def test_heading_block_names_a_section():
     assert "<h2>L02 Probability Redux</h2>" in html
 
 
-def test_heading_block_is_prose():
-    """A heading is text like a caption: escaped, and refused when it is not plain."""
+def test_heading_block_is_a_name_not_prose():
+    """A heading names a lecture or a section. It is escaped and markup is
+    refused, but the math guard does not apply: a deck the user confirmed
+    against Anki can be called "L03 E[X] and Var(X)", and refusing that name
+    would refuse the user's own deck."""
     html = render_html([{"type": "heading", "text": "a < b"}])
     assert "<h2>a &lt; b</h2>" in html
+    html = render_html([{"type": "heading", "text": "L03 E[X] and Var(X), s^2"}])
+    assert "<h2>L03 E[X] and Var(X), s^2</h2>" in html
     with pytest.raises(ValueError, match="plain text"):
         render_html([{"type": "heading", "text": "<b>Unit</b>"}])
-    with pytest.raises(ValueError, match="typeset only inside"):
-        render_html([{"type": "heading", "text": "moments of X_i"}])
 
 
 def test_formula_block_shows_label_tex_and_note():
@@ -638,6 +641,14 @@ def test_page_has_print_rules_that_keep_a_formula_whole():
     html = render_html([{"type": "formula", "label": "ok", "tex": "x"}])
     assert "@media print" in html
     assert "break-inside: avoid" in html
+
+
+def test_body_class_scopes_the_sheet_layout():
+    """The two-column print layout is for the sheet; a derivation pad must
+    print as it reads, so the class is what turns it on."""
+    assert '<body class="sheet">' in render_html([], body_class="sheet")
+    assert "<body>" in render_html([])
+    assert ".sheet main { max-width: none; column-count: 2" in render_html([])
 
 
 def test_check_prose_is_the_guard_the_renderer_uses():

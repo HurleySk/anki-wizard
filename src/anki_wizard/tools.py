@@ -62,7 +62,7 @@ def _require_outline(slug: str, paths: Paths) -> Outline:
     return load_outline(path)
 
 
-def _require_section(
+def require_section(
     slug: str, section_id: str | None, paths: Paths
 ) -> tuple[Outline, Section]:
     outline = _require_outline(slug, paths)
@@ -141,7 +141,7 @@ def read_section(
         if section is None:
             raise ValueError(f"source {slug!r} is fully covered")
     else:
-        outline, section = _require_section(slug, section_id, paths)
+        outline, section = require_section(slug, section_id, paths)
 
     page_numbers = outline.page_numbers(section)
     truncated = len(page_numbers) > max_pages
@@ -188,7 +188,7 @@ def propose_cards(
     if section_id is None and not paths.outline_file(slug).exists():
         source = CardSource(slug=slug)
     else:
-        outline, section = _require_section(slug, section_id, paths)
+        outline, section = require_section(slug, section_id, paths)
         source = CardSource(
             slug=slug, section=section.id, pages=outline.page_numbers(section)
         )
@@ -259,7 +259,7 @@ def skip_section(slug: str, section_id: str, reason: str, paths: Paths) -> dict:
     if not reason or not reason.strip():
         raise ValueError("a skip needs a reason; without one it reads as lost work")
 
-    outline, _ = _require_section(slug, section_id, paths)
+    outline, _ = require_section(slug, section_id, paths)
 
     # Cards and a skip are contradictory claims about the same section. Skipping
     # anyway would strand proposals the user never got to review.

@@ -24,6 +24,7 @@ from anki_wizard.ledger import record
 from anki_wizard.models import CardSource, Formula
 from anki_wizard.paths import Paths, deck_slug
 from anki_wizard.render import check_prose, render_html
+from anki_wizard.tools import require_section
 from anki_wizard.viewer import open_page
 
 
@@ -163,9 +164,25 @@ def _check_content(tex: str | None, label: str | None, note: str | None) -> None
 
 
 def _normalise_tex(tex: str) -> str:
-    # Whitespace never changes what TeX typesets, so it must not make two
-    # copies of a formula count as different.
+    # Spacing between tokens does not change what TeX typesets, so it must not
+    # make two copies of a formula count as different. Dropping it entirely
+    # also equates "\sin x" with the broken "\sinx", which nobody proposes.
     return "".join(tex.split())
+
+
+def _refuse_repeat(formulas: list[Formula], tex: str, except_id: str | None) -> None:
+    """Refuse a tex already live on the sheet, naming the entry it repeats.
+
+    The sheet must not balloon, and an exact repeat is the one duplicate a
+    tool can catch. Applied to edits as well as proposals, since an edit can
+    turn one formula into a copy of another just as easily.
+    """
+    key = _normalise_tex(tex)
+    for formula in formulas:
+        if formula.state == "rejected" or formula.id == except_id:
+            continue
+        if _normalise_tex(formula.tex) == key:
+            raise ValueError(f"{tex!r} is already on the sheet as {formula.id}")
 
 
 def _source_for(slug: str | None, section_id: str | None, paths: Paths) -> CardSource | None:
@@ -174,12 +191,10 @@ def _source_for(slug: str | None, section_id: str | None, paths: Paths) -> CardS
             raise ValueError("a section needs a slug to belong to")
         return None
     if section_id is None:
+        # Unlike propose_cards, an ingested slug with no section is fine: a
+        # formula can be drawn from a document as a whole.
         return CardSource(slug=slug)
-    # Late import: tools imports nothing from here, but keeping the dependency
-    # one-way at module load is what makes that easy to keep true.
-    from anki_wizard.tools import _require_section
-
-    outline, section = _require_section(slug, section_id, paths)
+    outline, section = require_section(slug, section_id, paths)
     return CardSource(slug=slug, section=section.id, pages=outline.page_numbers(section))
 
 
@@ -204,7 +219,7 @@ def propose_formulas(
     """
     for proposal in proposals:
         _check_content(
-            proposal.get("tex", ""), proposal.get("label", ""), proposal.get("note")
+            proposal.get("tex") or "", proposal.get("label") or "", proposal.get("note")
         )
 
     source = _source_for(slug, section_id, paths)
@@ -213,16 +228,10 @@ def propose_formulas(
     path = paths.cheatsheet_file(deck_slug(deck))
     with locked(path):
         formulas = load_sheet(path)
-        live = {
-            _normalise_tex(f.tex): f.id for f in formulas if f.state != "rejected"
-        }
         added: list[Formula] = []
         for proposal in proposals:
+            _refuse_repeat(formulas, proposal["tex"], except_id=None)
             key = _normalise_tex(proposal["tex"])
-            if key in live:
-                raise ValueError(
-                    f"{proposal['tex']!r} is already on the sheet as {live[key]}"
-                )
             if any(_normalise_tex(a.tex) == key for a in added):
                 raise ValueError(f"{proposal['tex']!r} appears twice in this batch")
             formula = Formula(
@@ -260,6 +269,8 @@ def review_formulas(deck: str, decisions: dict, paths: Paths) -> dict:
                 edits = decision.get("edit") or {}
                 if edits:
                     _check_content(edits.get("tex"), edits.get("label"), edits.get("note"))
+                    if edits.get("tex") is not None:
+                        _refuse_repeat(formulas, edits["tex"], except_id=formula_id)
                     formula = edit_formula(
                         formula,
                         tex=edits.get("tex"),
@@ -281,8 +292,7 @@ def review_formulas(deck: str, decisions: dict, paths: Paths) -> dict:
             formulas[index] = formula
             updated[formula_id] = formula.state
 
-        save_sheet(path, formulas)
-        _write_page(deck, formulas, paths)
+        _save_sheet_and_page(deck, path, formulas, paths)
     return {"updated": updated}
 
 
@@ -303,12 +313,13 @@ def revise_formula(
     with locked(path):
         formulas = load_sheet(path)
         index = index_of(formulas, formula_id, course)
+        if tex is not None:
+            _refuse_repeat(formulas, tex, except_id=formula_id)
         formula = edit_formula(formulas[index], tex=tex, label=label, note=note, tags=tags)
         if lecture is not None and lecture != formula.lecture:
             formula = record(formula, "refiled", lecture=lecture)
         formulas[index] = formula
-        save_sheet(path, formulas)
-        _write_page(deck, formulas, paths)
+        _save_sheet_and_page(deck, path, formulas, paths)
     return {"id": formula_id, "state": formula.state, "message": "formula revised"}
 
 
@@ -358,19 +369,39 @@ def _blocks_for(formulas: list[Formula], show_meta: bool) -> list[dict]:
     return blocks
 
 
+def _render_page(deck: str, formulas: list[Formula]) -> tuple[str, int]:
+    """The approved entries as the printable page, and how many there are."""
+    approved = [f for f in formulas if f.state == "approved"]
+    blocks = _blocks_for(approved, show_meta=False)
+    html = render_html(blocks, title=deck.split("::")[0], body_class="sheet")
+    return html, len(approved)
+
+
 def _write_page(deck: str, formulas: list[Formula], paths: Paths) -> tuple[Path, int]:
     """Render the approved entries to the course's stable page.
 
     Derived from the sheet and rebuilt on every change, so the URL a user has
     open in a tab is never behind the YAML.
     """
-    approved = [f for f in formulas if f.state == "approved"]
-    # Rendered from the given list rather than re-read, so a caller inside the
-    # lock writes what it just saved.
-    blocks = _blocks_for(approved, show_meta=False)
+    html, count = _render_page(deck, formulas)
     page = paths.cheatsheet_page(deck_slug(deck))
-    write_text_atomic(page, render_html(blocks, title=deck.split("::")[0]))
-    return page, len(approved)
+    write_text_atomic(page, html)
+    return page, count
+
+
+def _save_sheet_and_page(
+    deck: str, path: Path, formulas: list[Formula], paths: Paths
+) -> None:
+    """Save the sheet and rebuild its page, or change neither.
+
+    Rendering is pure, so it runs first: a render that fails -- a label put
+    into the YAML by hand that the prose guard refuses, say -- must not leave
+    the sheet saved and the page behind it, with the caller told the review
+    failed when half of it stuck.
+    """
+    html, _ = _render_page(deck, formulas)
+    save_sheet(path, formulas)
+    write_text_atomic(paths.cheatsheet_page(deck_slug(deck)), html)
 
 
 def render_cheatsheet(

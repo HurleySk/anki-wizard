@@ -199,7 +199,8 @@ for the right block instead of marking prose up:
 - emphasis: rewrite the sentence, or let a `steps` block's `why` carry the aside
 - displayed math: a `math` block, never `\[...\]` hand-rolled into prose
 - structure: separate blocks, a `heading` block to name a section, or a
-  `figure`; a heading is prose and follows the same rules
+  `figure`; a heading is a name, escaped with markup refused, but the math
+  guard does not apply to it, since a deck can be called `L03 E[X] and Var(X)`
 - a cheat sheet entry: a `formula` block (label, bare `tex`, optional `note`),
   which is what `pad_formulas` and the sheet page emit
 - punctuation: type the character itself (-- and " and ...), never an entity
@@ -315,9 +316,10 @@ the case it does not cover. Both are prose in the pad's sense -- plain text,
 math only inside `\(...\)` -- and are checked when proposed, so a bad label
 fails in your hands rather than on every later rebuild of the page.
 
-**Confirm the lecture** exactly as for cards, and never invent one. Entries
-without a lecture render under General at the top, which is where a formula
-the whole course uses belongs.
+**Confirm the lecture** exactly as for cards, and never invent one. The name
+is shown as the group heading exactly as Anki holds it, math and all, so it
+is not checked as prose. Entries without a lecture render under General at
+the top, which is where a formula the whole course uses belongs.
 
 **Review on the pad.** `pad_formulas()` renders the proposals grouped by
 lecture with their ids; hand over the URL and stop. After the user's

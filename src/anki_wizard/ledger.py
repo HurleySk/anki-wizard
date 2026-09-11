@@ -11,11 +11,15 @@ kept so edits to them leave the same trail. A `kind` key tells the two apart.
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypeVar
 
 import yaml
 
 from anki_wizard.atomic import locked, write_text_atomic
 from anki_wizard.models import AdoptedNote, Card, CardSource
+
+# Anything with a history list: a card, an adopted note, a cheat sheet formula.
+E = TypeVar("E")
 
 
 def _now() -> str:
@@ -23,17 +27,18 @@ def _now() -> str:
 
 
 def record(
-    entry: Card | AdoptedNote,
+    entry: E,
     action: str,
     detail: dict | None = None,
     **changes,
-) -> Card | AdoptedNote:
+) -> E:
     """Return a copy of `entry` with `changes` applied and `action` in its history.
 
     Every change to a ledger entry goes through here so the history stays an
     audit trail: nothing changes a field without saying what happened and when.
-    Adopted notes get the same treatment as authored cards -- both are
-    dataclasses carrying a history list, which is all this needs.
+    Adopted notes and cheat sheet formulas get the same treatment as authored
+    cards -- all are dataclasses carrying a history list, which is all this
+    needs.
 
     `detail` is merged into the history entry rather than set on the entry, for
     facts about the event that are not fields of the thing: which fields an

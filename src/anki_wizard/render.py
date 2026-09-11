@@ -35,7 +35,7 @@ window.MathJax = {{
 <script id="MathJax-script" async src="{cdn}"></script>
 <style>{css}</style>
 </head>
-<body>
+<body{body_class}>
 <main>
 {body}
 </main>
@@ -93,7 +93,7 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 2.5rem 0; }
   color: var(--muted); margin: 0 0 0.35rem;
 }
 .note-field img { max-width: 100%; height: auto; }
-h2 { font-size: 1.1rem; margin: 2.5rem 0 1rem; }
+.sheet h2 { font-size: 1.1rem; margin: 2.5rem 0 1rem; }
 .formula { margin: 0 0 1.4rem; break-inside: avoid; }
 .formula-label { font-weight: 600; }
 .formula-meta {
@@ -103,22 +103,30 @@ h2 { font-size: 1.1rem; margin: 2.5rem 0 1rem; }
 }
 .formula-note { color: var(--muted); font-size: 14px; font-style: italic; }
 /* The cheat sheet is meant to be printed: two columns, no margins, and a
-   formula never split across a page. */
+   formula never split across a page. Scoped to the sheet so a derivation
+   pad prints as it reads. */
 @media print {
-  body { font-size: 12px; padding: 0; }
-  main { max-width: none; column-count: 2; column-gap: 2rem; }
-  h2 { break-after: avoid; margin-top: 1.2rem; }
-  .formula { margin-bottom: 0.8rem; }
+  body.sheet { font-size: 12px; padding: 0; }
+  .sheet main { max-width: none; column-count: 2; column-gap: 2rem; }
+  .sheet h2 { break-after: avoid; margin-top: 1.2rem; }
+  .sheet .formula { margin-bottom: 0.8rem; }
 }
 """
 
 
-def render_html(blocks: list[dict], title: str = "Study pad") -> str:
-    """Turn content blocks into a standalone page."""
+def render_html(
+    blocks: list[dict], title: str = "Study pad", body_class: str | None = None
+) -> str:
+    """Turn content blocks into a standalone page.
+
+    `body_class` scopes styling that is not for every page: the cheat sheet
+    sets "sheet" for its print layout, which a derivation pad must not get.
+    """
     return _PAGE.format(
         title=escape(title),
         cdn=MATHJAX_CDN,
         css=_CSS,
+        body_class=f' class="{escape(body_class)}"' if body_class else "",
         body="\n".join(_render_block(b) for b in blocks),
     )
 
@@ -145,7 +153,13 @@ def _render_block(block: dict) -> str:
     if kind == "note":
         return _render_note(block)
     if kind == "heading":
-        return f"<h2>{_prose(block['text'])}</h2>"
+        # A heading names something -- a lecture, a section -- and a name is
+        # not prose: a deck called "L03 E[X] and Var(X)" is what Anki holds,
+        # and refusing it as undelimited math would refuse the user's own
+        # deck. Escaped, and markup still refused, but no math guard.
+        text = block["text"]
+        _reject_markup(text)
+        return f"<h2>{escape(text)}</h2>"
     if kind == "formula":
         return _render_formula(block)
     raise ValueError(f"unknown block type: {kind!r}")

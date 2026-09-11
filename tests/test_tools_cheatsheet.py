@@ -109,6 +109,25 @@ def test_propose_refuses_a_formula_already_on_the_sheet(workspace):
         propose_formulas(COURSE, [again], paths=workspace)
 
 
+def test_propose_refuses_an_absent_tex_by_name(workspace):
+    with pytest.raises(ValueError, match="non-empty tex"):
+        propose_formulas(COURSE, [{"tex": None, "label": "x"}], paths=workspace)
+    with pytest.raises(ValueError, match="non-empty label"):
+        propose_formulas(COURSE, [{"tex": "x", "label": None}], paths=workspace)
+
+
+def test_edits_cannot_create_the_duplicate_a_proposal_is_refused(workspace):
+    propose_formulas(COURSE, [scaling(), variance()], paths=workspace)
+    with pytest.raises(ValueError, match="already on the sheet as f-0001"):
+        revise_formula(COURSE, "f-0002", paths=workspace, tex=scaling()["tex"])
+    with pytest.raises(ValueError, match="already on the sheet as f-0001"):
+        review_formulas(
+            COURSE, {"f-0002": {"edit": {"tex": scaling()["tex"]}}}, paths=workspace
+        )
+    # Re-stating a formula's own tex is not a repeat of itself.
+    revise_formula(COURSE, "f-0001", paths=workspace, tex=scaling()["tex"] + " ")
+
+
 def test_propose_refuses_a_repeat_within_the_batch(workspace):
     with pytest.raises(ValueError, match="twice in this batch"):
         propose_formulas(COURSE, [scaling(), scaling(label="Again")], paths=workspace)
@@ -262,6 +281,29 @@ def test_review_and_revise_keep_the_page_current(workspace):
 
     review_formulas(COURSE, {"f-0001": "reject"}, paths=workspace)
     assert "Linearity" not in page.read_text()
+
+
+def test_a_review_that_cannot_render_changes_nothing(workspace):
+    """The YAML gets hand-edited. If a label put there by hand fails the prose
+    guard, the review must not save the sheet and then fail to write the
+    page: the caller would be told it failed when half of it stuck."""
+    propose_formulas(COURSE, [scaling(), variance()], paths=workspace)
+    review_formulas(COURSE, {"f-0001": "approve"}, paths=workspace)
+    path = workspace.cheatsheet_file("intro-to-probability")
+    path.write_text(path.read_text().replace("label: Scaling", "label: E[X] scaling"))
+    before = path.read_text()
+
+    with pytest.raises(ValueError, match="typeset only inside"):
+        review_formulas(COURSE, {"f-0002": "approve"}, paths=workspace)
+    assert path.read_text() == before
+    assert "Variance" not in workspace.cheatsheet_page("intro-to-probability").read_text()
+
+
+def test_a_lecture_named_with_math_still_renders(workspace):
+    """The lecture is a deck the user confirmed against Anki, not prose."""
+    propose_formulas(COURSE, [scaling(lecture="Unit I::L03 E[X] and Var(X)")], paths=workspace)
+    review_formulas(COURSE, {"f-0001": "approve"}, paths=workspace)
+    assert "L03 E[X] and Var(X)" in workspace.cheatsheet_page("intro-to-probability").read_text()
 
 
 def test_render_an_empty_sheet_still_makes_a_page(workspace):
