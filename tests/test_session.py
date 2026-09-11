@@ -97,3 +97,34 @@ def test_session_exposes_the_collection_tools(tmp_path):
         session = Session(root=tmp_path)
 
         assert session.decks()["decks"] == ["Default", "Stats"]
+
+
+def test_session_cheat_sheet_flow_supplies_deck_tags_and_lecture(tmp_path):
+    (tmp_path / "config.yaml").write_text(
+        yaml.safe_dump(
+            {"deck": "Intro to Probability", "default_tags": ["6-041"], "pad_viewer": "none"}
+        )
+    )
+    s = Session(root=tmp_path)
+    result = s.propose_formulas(
+        [{"tex": r"\mathbb{E}[aX] = a\,\mathbb{E}[X]", "label": "Scaling"}],
+        lecture="Unit I::L02 Expectation",
+    )
+    (f,) = result["formulas"]
+    assert f["tags"] == ["6-041"]
+    assert f["lecture"] == "Unit I::L02 Expectation"
+    assert s.paths.cheatsheet_file("intro-to-probability").exists()
+
+    s.pad_formulas()
+    pad = s.paths.pad_file().read_text()
+    assert "<title>Formulas: Intro to Probability</title>" in pad
+    assert "f-0001 · proposed" in pad
+
+    assert s.review_formulas({"f-0001": "approve"}) == {"updated": {"f-0001": "approved"}}
+    assert s.revise_formula("f-0001", note=r"any constant \(a\)")["state"] == "approved"
+
+    result = s.cheatsheet()
+    page = s.paths.cheatsheet_page("intro-to-probability")
+    assert result["path"] == str(page)
+    assert result["formulas"] == 1
+    assert r"any constant \(a\)" in page.read_text()

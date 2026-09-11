@@ -7,7 +7,7 @@ config.yaml once and supplies those arguments.
 
 from pathlib import Path
 
-from anki_wizard import collection, tools
+from anki_wizard import cheatsheet, collection, tools
 from anki_wizard.anki import AnkiClient
 from anki_wizard.config import load_config
 from anki_wizard.paths import Paths
@@ -120,6 +120,60 @@ class Session:
         """
         blocks = tools.card_blocks(slug, paths=self.paths, ids=ids, state=state)
         return self.pad(blocks + list(extra or []), title=f"Cards: {slug}")
+
+    def propose_formulas(
+        self,
+        proposals: list[dict],
+        slug: str | None = None,
+        section_id: str | None = None,
+        lecture: str | None = None,
+    ) -> dict:
+        """Propose cheat sheet formulas for the configured course.
+
+        Same lecture precedence as propose: a lecture on a proposal wins over
+        the batch argument.
+        """
+        if lecture is not None:
+            proposals = [{"lecture": lecture, **p} for p in proposals]
+        return cheatsheet.propose_formulas(
+            self.config.deck,
+            proposals,
+            paths=self.paths,
+            slug=slug,
+            section_id=section_id,
+            default_tags=self.config.default_tags,
+        )
+
+    def review_formulas(self, decisions: dict) -> dict:
+        return cheatsheet.review_formulas(self.config.deck, decisions, paths=self.paths)
+
+    def revise_formula(self, formula_id: str, **edits) -> dict:
+        return cheatsheet.revise_formula(
+            self.config.deck, formula_id, paths=self.paths, **edits
+        )
+
+    def pad_formulas(
+        self,
+        ids: list[str] | None = None,
+        state: str | None = "proposed",
+        extra: list[dict] | None = None,
+    ) -> dict:
+        """Put cheat sheet entries on the pad for review, proposals by default."""
+        blocks = cheatsheet.formula_blocks(
+            self.config.deck, paths=self.paths, ids=ids, state=state
+        )
+        return self.pad(
+            blocks + list(extra or []), title=f"Formulas: {self.config.deck}"
+        )
+
+    def cheatsheet(self) -> dict:
+        """Rebuild the course's printable sheet and return where to read it."""
+        return cheatsheet.render_cheatsheet(
+            self.config.deck,
+            paths=self.paths,
+            viewer=self.config.pad_viewer,
+            server_timeout_minutes=self.config.pad_server_timeout_minutes,
+        )
 
     def edit_note(self, note_id: int, changes: dict, force: bool = False) -> dict:
         return collection.edit_note(
