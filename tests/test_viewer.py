@@ -89,6 +89,28 @@ def test_kept_notes_are_reachable(pad):
     assert fetch(url.replace("pad.html", "notes/clt.html")) == (200, "<p>kept</p>")
 
 
+def test_a_page_below_the_root_is_served_by_the_one_server(pad):
+    """A cheat sheet lives in a subdirectory of the pad but must not get its
+    own server: one process per directory would stack up, and the URL host
+    and port would differ from the pad's."""
+    (pad / "cheatsheets").mkdir()
+    sheet = pad / "cheatsheets" / "stats.html"
+    sheet.write_text("<p>sheet</p>")
+    pad_url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"]
+    result = viewer.open_page(sheet, viewer="vscode", root=pad)
+
+    assert result["url"] == pad_url.replace("pad.html", "cheatsheets/stats.html")
+    assert fetch(result["url"]) == (200, "<p>sheet</p>")
+    assert viewer.running_server(pad / "cheatsheets") is None
+
+
+def test_a_page_outside_the_root_is_refused(pad, tmp_path):
+    elsewhere = tmp_path / "other.html"
+    elsewhere.write_text("x")
+    with pytest.raises(ValueError, match="not under"):
+        viewer.open_page(elsewhere, viewer="vscode", root=pad)
+
+
 def test_a_second_render_reuses_the_running_server(pad):
     """A server per render would stack up processes and change the URL."""
     first = viewer.open_page(pad / "pad.html", viewer="vscode")["url"]

@@ -166,8 +166,15 @@ def open_page(
     path: Path,
     viewer: str = "vscode",
     idle_timeout_minutes: float = DEFAULT_IDLE_TIMEOUT_MINUTES,
+    root: Path | None = None,
 ) -> dict:
-    """Make a page viewable, reporting where it can be reached."""
+    """Make a page viewable, reporting where it can be reached.
+
+    `root` is the directory served, and defaults to the page's own. A page in
+    a subdirectory of the pad passes the pad as root so it is reached through
+    the one server already running there, at a URL carrying the subpath,
+    rather than by a second server rooted at the subdirectory.
+    """
     if viewer not in VIEWERS:
         raise ValueError(
             f"unknown viewer {viewer!r}; expected one of {', '.join(VIEWERS)}"
@@ -175,6 +182,11 @@ def open_page(
     # Callers routinely hold a relative path (Paths(root=Path("."))), which has
     # no file URI at all.
     path = path.resolve()
+    root = path.parent if root is None else root.resolve()
+    try:
+        subpath = path.relative_to(root).as_posix()
+    except ValueError:
+        raise ValueError(f"{path} is not under the served root {root}") from None
 
     if viewer == "none":
         return {"viewer": "none", "opened": False}
@@ -183,7 +195,7 @@ def open_page(
         return {"viewer": "browser", "opened": bool(webbrowser.open(path.as_uri()))}
 
     try:
-        record = start_detached(path.parent, idle_timeout_minutes=idle_timeout_minutes)
+        record = start_detached(root, idle_timeout_minutes=idle_timeout_minutes)
     except OSError as exc:
         # No server means no http:// URL and so no editor tab, but the file URI
         # still renders in a browser.
@@ -199,7 +211,7 @@ def open_page(
     return {
         "viewer": "vscode",
         "opened": False,
-        "url": f"http://{record['host']}:{record['port']}/{path.name}",
+        "url": f"http://{record['host']}:{record['port']}/{subpath}",
         "expires_after_idle_minutes": record["idle_timeout_minutes"],
     }
 
