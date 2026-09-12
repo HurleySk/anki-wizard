@@ -358,7 +358,10 @@ def _blocks_for(formulas: list[Formula], show_meta: bool) -> list[dict]:
 
     blocks: list[dict] = []
     for lecture in ordered:
-        blocks.append({"type": "heading", "text": lecture or "General"})
+        # The lecture name is Anki's, math and all, and is shown as held.
+        blocks.append(
+            {"type": "heading", "text": lecture or "General", "verbatim": True}
+        )
         for formula in groups[lecture]:
             block = {"type": "formula", "label": formula.label, "tex": formula.tex}
             if formula.note:

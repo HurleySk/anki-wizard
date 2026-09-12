@@ -214,6 +214,8 @@ def test_blocks_group_by_lecture_with_unfiled_first(workspace):
         ("formula", "Scaling"),
         ("formula", "Also L02"),
     ]
+    # Lecture names are Anki's, math and all, so the page must not refuse them.
+    assert all(b["verbatim"] for b in blocks if b["type"] == "heading")
 
 
 def test_blocks_carry_meta_unless_showing_the_sheet(workspace):

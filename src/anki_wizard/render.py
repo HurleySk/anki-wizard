@@ -153,12 +153,18 @@ def _render_block(block: dict) -> str:
     if kind == "note":
         return _render_note(block)
     if kind == "heading":
-        # A heading names something -- a lecture, a section -- and a name is
-        # not prose: a deck called "L03 E[X] and Var(X)" is what Anki holds,
-        # and refusing it as undelimited math would refuse the user's own
-        # deck. Escaped, and markup still refused, but no math guard.
+        # A heading an agent writes is prose: "T_n" in an h2 shows a literal
+        # underscore as silently as it would in a paragraph, and MathJax does
+        # typeset \(...\) in a heading, so the guard costs nothing. The
+        # exemption is for a name copied from Anki -- a deck can be called
+        # "L03 E[X] and Var(X)", and refusing it as undelimited math would
+        # refuse the user's own deck -- and only the tool that copied it
+        # knows, so it says so with "verbatim". Markup is refused either way.
         text = block["text"]
-        _reject_markup(text)
+        if block.get("verbatim"):
+            _reject_markup(text)
+        else:
+            check_prose(text)
         return f"<h2>{escape(text)}</h2>"
     if kind == "formula":
         return _render_formula(block)

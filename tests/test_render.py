@@ -590,17 +590,28 @@ def test_heading_block_names_a_section():
     assert "<h2>L02 Probability Redux</h2>" in html
 
 
-def test_heading_block_is_a_name_not_prose():
-    """A heading names a lecture or a section. It is escaped and markup is
-    refused, but the math guard does not apply: a deck the user confirmed
-    against Anki can be called "L03 E[X] and Var(X)", and refusing that name
-    would refuse the user's own deck."""
+def test_heading_block_is_prose_unless_verbatim():
+    """A heading an agent writes is held to the prose rule: "T_n" in an h2
+    renders as a literal underscore, silently, the same way it would in a
+    paragraph. A heading built from a name Anki holds is exempt, since a deck
+    the user confirmed can be called "L03 E[X] and Var(X)" and refusing that
+    name would refuse the user's own deck; the tool that copies it says so."""
     html = render_html([{"type": "heading", "text": "a < b"}])
     assert "<h2>a &lt; b</h2>" in html
-    html = render_html([{"type": "heading", "text": "L03 E[X] and Var(X), s^2"}])
-    assert "<h2>L03 E[X] and Var(X), s^2</h2>" in html
+    html = render_html([{"type": "heading", "text": r"Expected value of \(T_n\)"}])
+    assert r"<h2>Expected value of \(T_n\)</h2>" in html
+    with pytest.raises(ValueError, match="T_n"):
+        render_html([{"type": "heading", "text": "Expected value of T_n"}])
     with pytest.raises(ValueError, match="plain text"):
         render_html([{"type": "heading", "text": "<b>Unit</b>"}])
+
+    name = "L03 E[X] and Var(X), s^2"
+    with pytest.raises(ValueError):
+        render_html([{"type": "heading", "text": name}])
+    html = render_html([{"type": "heading", "text": name, "verbatim": True}])
+    assert f"<h2>{name}</h2>" in html
+    with pytest.raises(ValueError, match="plain text"):
+        render_html([{"type": "heading", "text": "<b>Unit</b>", "verbatim": True}])
 
 
 def test_formula_block_shows_label_tex_and_note():
