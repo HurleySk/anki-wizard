@@ -105,6 +105,17 @@ def test_render_pad_embeds_an_animation(workspace):
     assert "function Animation" in workspace.pad_file().read_text()
 
 
+def test_render_pad_embeds_a_surface(workspace):
+    render_pad(
+        [{"type": "surface", "x": [0.0, 1.0], "y": [0.0, 1.0], "z": [[0.0, 1.0], [1.0, 2.0]]}],
+        paths=workspace,
+        viewer="none",
+    )
+    html = workspace.pad_file().read_text()
+    assert 'padScene("scene-' in html
+    assert "plotly.js-dist-min" in html
+
+
 # --- card_blocks: ledger cards on the pad ---------------------------------
 
 
