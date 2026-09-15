@@ -13,11 +13,14 @@ lazily, so the rest of the package works without it installed.
 """
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from anki_wizard.atomic import write_text_atomic
+from anki_wizard.cursor import load_cursor, save_cursor
 from anki_wizard.models import Outline, Section
+from anki_wizard.outline import save_outline
 
 LOGIN_SCRIPT = "scripts/edx_login.py"
 SEQUENCE_API = "/api/courseware/sequence/"
@@ -298,3 +301,55 @@ def capture_unit(page, slug: str, unit: dict, first_page: int, paths, response=N
     if number == first_page:
         entry["reason"] = "no capturable blocks on this tab"
     return entry
+
+
+def _result(slug: str, outline: Outline) -> dict:
+    # The same shape ingest_source returns, so an agent reads both alike.
+    return {
+        "slug": slug,
+        "pages": outline.pages,
+        "structure": outline.structure,
+        "sections": [asdict(s) for s in outline.sections],
+    }
+
+
+def capture_set(context, url: str, slug: str, paths) -> dict:
+    """Capture every tab of the set at `url` into `sources/<slug>/`.
+
+    Tabs already in the manifest are skipped, so a run interrupted partway
+    resumes at the first tab not yet recorded. After each tab the manifest
+    and outline are rewritten, so a crash leaves a consistent source.
+    """
+    lms, sequential = parse_course_url(url)
+    manifest_path = paths.source_manifest(slug)
+    manifest = existing_manifest(manifest_path, sequential)
+
+    page = context.new_page()
+    units = fetch_units(page, lms, sequential)
+
+    if manifest is None:
+        manifest = new_manifest(url, lms, sequential)
+    paths.ensure_source_dirs(slug)
+    done = {entry["id"] for entry in manifest["units"]}
+
+    for unit in units:
+        if unit["id"] in done:
+            continue
+        first_page = manifest["units"][-1]["pages"][1] if manifest["units"] else 1
+        response = page.goto(unit_url(lms, unit["id"]))
+        if response is not None and "/login" in urlsplit(response.url).path:
+            # Mid-run expiry. Everything recorded so far stays, and the next
+            # run after a fresh login picks up here.
+            raise LoginRequired(url, "the session expired partway through the set")
+        entry = capture_unit(page, slug, unit, first_page, paths, response=response)
+        manifest["units"].append(entry)
+        save_manifest(manifest_path, manifest)
+        save_outline(paths.outline_file(slug), outline_from_manifest(slug, manifest))
+
+    outline = outline_from_manifest(slug, manifest)
+    save_outline(paths.outline_file(slug), outline)
+    save_manifest(manifest_path, manifest)
+    cursor_path = paths.cursor_file(slug)
+    if not cursor_path.exists():
+        save_cursor(cursor_path, load_cursor(cursor_path))
+    return _result(slug, outline)

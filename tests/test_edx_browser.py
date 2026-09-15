@@ -1,15 +1,22 @@
 """Browser-layer tests. Skipped when Playwright or its Chromium is missing."""
 
+import json
+
 import pytest
 
+from anki_wizard import edx
+from anki_wizard.cursor import load_cursor
 from anki_wizard.edx import (
     NO_SOLUTION_LINE,
     LoginRequired,
+    capture_set,
     capture_unit,
     fetch_units,
     unit_url,
 )
+from anki_wizard.outline import load_outline
 from anki_wizard.paths import Paths
+from anki_wizard.tools import get_progress, read_section
 from tests.fake_lms import SEQUENTIAL, FakeLms, unit_id
 
 sync_api = pytest.importorskip("playwright.sync_api")
@@ -128,3 +135,98 @@ def test_capture_unit_records_a_reason_for_an_unreadable_page(context, workspace
         "reason": "unit page answered 404",
     }
     assert not workspace.page_image("pset", 3).exists()
+
+
+def test_capture_set_writes_manifest_outline_cursor_and_pages(context, workspace):
+    with FakeLms([("ps1-tab1", "Diagonalization"), ("ps1-tab2", "Eigenvalues")]) as lms:
+        result = capture_set(context, lms.course_url, "pset", workspace)
+        course_url = lms.course_url
+    assert result["slug"] == "pset"
+    assert result["structure"] == "units"
+    assert result["pages"] == 8
+    assert [s["title"] for s in result["sections"]] == ["Diagonalization", "Eigenvalues"]
+    assert [s["pages"] for s in result["sections"]] == [[1, 5], [5, 9]]
+    outline = load_outline(workspace.outline_file("pset"))
+    assert outline.structure == "units"
+    assert workspace.cursor_file("pset").exists()
+    assert load_cursor(workspace.cursor_file("pset")).covered == []
+    manifest = json.loads(workspace.source_manifest("pset").read_text())
+    assert manifest["url"] == course_url
+    assert manifest["sequential"] == SEQUENTIAL
+    assert [u["pages"] for u in manifest["units"]] == [[1, 5], [5, 9]]
+
+
+def test_capture_set_result_reads_through_the_ordinary_tools(context, workspace):
+    with FakeLms([("ps1-tab1", "Diagonalization")]) as lms:
+        capture_set(context, lms.course_url, "pset", workspace)
+    progress = get_progress("pset", paths=workspace)
+    assert progress["next"]["title"] == "Diagonalization"
+    section = read_section("pset", None, paths=workspace)
+    assert [p["number"] for p in section["pages"]] == [1, 2, 3, 4]
+    assert section["pages"][1]["text"].startswith("[problem block]")
+
+
+def test_capture_set_records_an_unreadable_tab_and_continues(context, workspace):
+    units = [("ps1-tab1", "One"), ("ps1-tab2", "Two"), ("ps1-tab3", "Three")]
+    with FakeLms(units, unit_status={"ps1-tab2": 404}) as lms:
+        result = capture_set(context, lms.course_url, "pset", workspace)
+    assert [s["pages"] for s in result["sections"]] == [[1, 5], [5, 5], [5, 9]]
+    manifest = json.loads(workspace.source_manifest("pset").read_text())
+    assert manifest["units"][1]["reason"] == "unit page answered 404"
+
+
+def test_capture_set_resumes_after_an_interruption(context, workspace, monkeypatch):
+    calls = []
+    original = edx.capture_unit
+
+    def interrupted(page, slug, unit, first_page, paths, response=None):
+        calls.append(unit["id"])
+        if len(calls) == 2:
+            raise RuntimeError("browser died")
+        return original(page, slug, unit, first_page, paths, response)
+
+    monkeypatch.setattr(edx, "capture_unit", interrupted)
+    with FakeLms([("ps1-tab1", "One"), ("ps1-tab2", "Two")]) as lms:
+        with pytest.raises(RuntimeError, match="browser died"):
+            capture_set(context, lms.course_url, "pset", workspace)
+        manifest = json.loads(workspace.source_manifest("pset").read_text())
+        assert [u["id"] for u in manifest["units"]] == [unit_id("ps1-tab1")]
+        assert len(load_outline(workspace.outline_file("pset")).sections) == 1
+
+        result = capture_set(context, lms.course_url, "pset", workspace)
+    assert calls == [unit_id("ps1-tab1"), unit_id("ps1-tab2"), unit_id("ps1-tab2")]
+    assert [s["pages"] for s in result["sections"]] == [[1, 5], [5, 9]]
+
+
+def test_capture_set_refuses_a_second_set_on_a_slug(context, workspace):
+    with FakeLms([("ps1-tab1", "One")]) as lms:
+        capture_set(context, lms.course_url, "pset", workspace)
+        other = lms.course_url.replace("sequential+block@ps1", "sequential+block@ps2")
+        with pytest.raises(ValueError, match="already holds"):
+            capture_set(context, other, "pset", workspace)
+
+
+def test_capture_set_raises_login_required_and_writes_nothing(context, workspace):
+    with FakeLms([("ps1-tab1", "One")], logged_in=False) as lms, pytest.raises(LoginRequired):
+        capture_set(context, lms.course_url, "pset", workspace)
+    assert not workspace.source_manifest("pset").exists()
+    assert not workspace.outline_file("pset").exists()
+
+
+def test_capture_set_raises_login_required_when_the_session_expires_midway(context, workspace):
+    with FakeLms([("ps1-tab1", "One"), ("ps1-tab2", "Two")]) as lms:
+        original = edx.capture_unit
+
+        def expire_after_first(page, slug, unit, first_page, paths, response=None):
+            entry = original(page, slug, unit, first_page, paths, response)
+            lms.logged_in = False
+            return entry
+
+        edx.capture_unit = expire_after_first
+        try:
+            with pytest.raises(LoginRequired, match="expired"):
+                capture_set(context, lms.course_url, "pset", workspace)
+        finally:
+            edx.capture_unit = original
+    manifest = json.loads(workspace.source_manifest("pset").read_text())
+    assert [u["id"] for u in manifest["units"]] == [unit_id("ps1-tab1")]
