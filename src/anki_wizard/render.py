@@ -518,13 +518,33 @@ def _render_surface(block: dict) -> str:
     return _render_scene([_surface_trace(block)], block)
 
 
+def _axis_label(text: str | None) -> str | None:
+    """A plain-text axis title, refused if it would not read as written.
+
+    Axis titles are drawn by plotly, not typeset by MathJax, so the prose
+    guard applies (markup, ASCII math) and then one more: a \\(...\\) span,
+    which prose allows, would here show as its source. The caption is
+    where the math goes.
+    """
+    if text is None:
+        return None
+    check_prose(text)
+    if _DELIMITED_MATH.search(text):
+        raise ValueError(
+            f"axis titles are not typeset, so {text!r} would show as its "
+            "source; use plain text with Unicode symbols and put the math "
+            "in the caption"
+        )
+    return text
+
+
 def _render_scene(traces: list[dict], block: dict) -> str:
     """Traces and labels as one figure that the page's helper draws.
 
     Knows nothing about what kind of traces it holds, which is what lets a
     scatter or a curve be added later as another trace builder.
     """
-    labels = {axis: block.get(f"{axis}label") for axis in "xyz"}
+    labels = {axis: _axis_label(block.get(f"{axis}label")) for axis in "xyz"}
     payload = json.dumps({"traces": traces, "labels": labels}, allow_nan=False)
     # Inside a script element "</" is the only sequence that can end it, and
     # "<\/" is the same string to JavaScript.
@@ -532,9 +552,12 @@ def _render_scene(traces: list[dict], block: dict) -> str:
     # Two blocks on one page must not share an id, for the same reason the
     # animation player re-mints its token.
     scene_id = f"scene-{uuid.uuid4().hex}"
+    caption = block.get("caption")
+    caption_html = f"\n<figcaption>{_prose(caption)}</figcaption>" if caption else ""
     return (
         f'<figure><div class="scene" id="{scene_id}"></div>\n'
-        f'<script>padScene("{scene_id}", {payload});</script></figure>'
+        f'<script>padScene("{scene_id}", {payload});</script>'
+        f"{caption_html}</figure>"
     )
 
 

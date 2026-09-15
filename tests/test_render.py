@@ -396,6 +396,41 @@ def test_oversized_surface_is_refused_with_advice():
         render_html([_a_surface(z=np.zeros((600, 600)))])
 
 
+def test_axis_labels_reach_the_payload_and_a_missing_one_is_null():
+    html = render_html([_a_surface(xlabel="log-likelihood")])
+    assert '"x": "log-likelihood"' in html
+    assert '"y": null' in html
+
+
+def test_axis_label_with_math_delimiters_is_refused():
+    """plotly draws axis titles; MathJax never sees them. A \\(...\\) span
+    that prose allows would here show as its source, so the label is
+    refused and the message points at the caption, where math typesets.
+    """
+    with pytest.raises(ValueError, match=r"not typeset.*caption"):
+        render_html([_a_surface(xlabel=r"\(\theta_1\)")])
+
+
+def test_axis_label_with_markup_is_refused():
+    with pytest.raises(ValueError, match="plain text"):
+        render_html([_a_surface(zlabel="<b>density</b>")])
+
+
+def test_axis_label_with_ascii_math_is_refused():
+    with pytest.raises(ValueError, match="sigma\\^2"):
+        render_html([_a_surface(zlabel="sigma^2")])
+
+
+def test_surface_caption_is_rendered_and_escaped():
+    html = render_html([_a_surface(caption="density of a < b")])
+    assert "<figcaption>density of a &lt; b</figcaption>" in html
+
+
+def test_surface_without_a_caption_omits_the_element():
+    html = render_html([_a_surface()])
+    assert "<figcaption>" not in html
+
+
 def test_markup_in_prose_is_refused():
     """Prose is plain text, so markup in it is a mistake worth failing on.
 
