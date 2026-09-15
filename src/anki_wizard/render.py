@@ -538,18 +538,61 @@ def _render_scene(traces: list[dict], block: dict) -> str:
     )
 
 
+_MAX_SURFACE_CELLS = 250_000
+
+
 def _surface_trace(block: dict) -> dict:
-    z, _ = _grid(block["z"], "z", holes=True)
-    x, _ = _grid(block["x"], "x")
-    y, _ = _grid(block["y"], "y")
+    """A plotly surface trace from a block's x, y, z, checked.
+
+    The one function that knows what a surface is; _render_scene only knows
+    it has traces and labels, which is what lets a scatter or a curve be
+    added later as another function shaped like this one.
+    """
+    if any(key not in block for key in ("x", "y", "z")):
+        raise ValueError("a surface block needs x, y, and z")
+    z, shape = _grid(block["z"], "z", holes=True)
+    if len(shape) != 2:
+        raise ValueError(f"z must be a 2D grid, got a 1D array of length {shape[0]}")
+    rows, cols = shape
+    if rows * cols > _MAX_SURFACE_CELLS:
+        # On cells rather than bytes, unlike the animation guard: the shape
+        # is what the author controls, and a mesh this large is also slow to
+        # rotate, so cells are what actually hurts here.
+        raise ValueError(
+            f"z is {rows}x{cols} = {rows * cols:,} cells, over the "
+            f"{_MAX_SURFACE_CELLS:,} limit; use a coarser grid -- 100 per "
+            "axis is plenty for a density"
+        )
     return {
         "type": "surface",
-        "x": x,
-        "y": y,
+        "x": _axis(block["x"], "x", cols, shape),
+        "y": _axis(block["y"], "y", rows, shape),
         "z": z,
         "colorscale": "Viridis",
         "showscale": False,
     }
+
+
+def _axis(value, name: str, length: int, grid: tuple[int, int]) -> list:
+    """An axis as a 1D vector of the right length, or the 2D meshgrid output.
+
+    Both, because both are what an author holds: the axes they built, or the
+    X and Y that meshgrid returned and f(X, Y) was evaluated on. A mismatch
+    is refused naming both sizes, since the common mistake is the axes
+    swapped, and the convention in the message is what un-swaps them.
+    """
+    data, shape = _grid(value, name)
+    if shape in ((length,), grid):
+        return data
+    rows, cols = grid
+    found = "x".join(str(n) for n in shape)
+    which = "columns" if name == "x" else "rows"
+    raise ValueError(
+        f"{name} has shape {found} but z has {rows} rows and {cols} columns; "
+        f"{name} must be a 1D axis of length {length} (z's {which}) or the "
+        f"2D meshgrid output of shape {rows}x{cols}. The convention is "
+        "z[i][j] at y[i], x[j], as numpy.meshgrid returns."
+    )
 
 
 def _grid(value, name: str, holes: bool = False) -> tuple[list, tuple[int, ...]]:

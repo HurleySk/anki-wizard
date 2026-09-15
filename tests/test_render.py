@@ -354,6 +354,48 @@ def test_scene_payload_cannot_close_the_script_tag():
     assert "1</2" not in html
 
 
+def test_surface_missing_an_axis_is_refused():
+    block = _a_surface()
+    del block["z"]
+    with pytest.raises(ValueError, match="needs x, y, and z"):
+        render_html([block])
+
+
+def test_a_1d_z_is_refused():
+    with pytest.raises(ValueError, match="z must be a 2D grid, got a 1D array of length 3"):
+        render_html([_a_surface(z=[0.0, 1.0, 4.0])])
+
+
+def test_mismatched_x_is_refused_naming_both_sizes():
+    """The common mistake is the axes swapped, so the message carries the
+    convention that un-swaps them."""
+    with pytest.raises(
+        ValueError,
+        match=r"x has shape 2 but z has 2 rows and 3 columns.*z\[i\]\[j\] at y\[i\], x\[j\]",
+    ):
+        render_html([_a_surface(x=[0.0, 1.0])])
+
+
+def test_mismatched_y_is_refused_naming_both_sizes():
+    with pytest.raises(ValueError, match="y has shape 3 but z has 2 rows and 3 columns"):
+        render_html([_a_surface(y=[0.0, 1.0, 2.0])])
+
+
+def test_a_2d_axis_of_the_wrong_shape_is_refused():
+    with pytest.raises(ValueError, match="x has shape 3x2 but z has 2 rows and 3 columns"):
+        render_html([_a_surface(x=[[0.0, 1.0], [0.0, 1.0], [0.0, 1.0]])])
+
+
+def test_oversized_surface_is_refused_with_advice():
+    """On cells rather than bytes, unlike the animation guard: the shape is
+    what the author controls, and a mesh this large is also slow to rotate.
+    """
+    import numpy as np
+
+    with pytest.raises(ValueError, match=r"600x600 = 360,000 cells.*coarser grid"):
+        render_html([_a_surface(z=np.zeros((600, 600)))])
+
+
 def test_markup_in_prose_is_refused():
     """Prose is plain text, so markup in it is a mistake worth failing on.
 
