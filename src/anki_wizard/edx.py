@@ -154,12 +154,28 @@ class LoginRequired(RuntimeError):
         )
 
 
-def _login_wall(status: int, content_type: str, final_url: str) -> str | None:
-    """Why a response looks like the login wall, or None when it does not."""
+def _sent_to_sign_in(final_url: str, lms: str) -> str | None:
+    """Why the final URL of a request looks like the sign-in wall, or None.
+
+    The site sends an unauthenticated browser to its SSO host, so a request
+    that ends on another origin is the wall whatever that host calls its
+    path; a same-origin `/login` is the older, self-hosted form of it.
+    """
+    final, home = urlsplit(final_url), urlsplit(lms)
+    if final.netloc and final.netloc != home.netloc:
+        return f"the course site sent the request to sign in at {final.netloc}"
+    if "/login" in final.path:
+        return "the course site redirected to its login page"
+    return None
+
+
+def _login_wall(status: int, content_type: str, final_url: str, lms: str) -> str | None:
+    """Why a sequence API response looks like the login wall, or None."""
     if status in (401, 403):
         return f"the course site answered {status}"
-    if "/login" in urlsplit(final_url).path:
-        return "the course site redirected to its login page"
+    redirected = _sent_to_sign_in(final_url, lms)
+    if redirected:
+        return redirected
     if "json" not in content_type:
         return f"the course site answered with {content_type or 'no content type'} rather than JSON"
     return None
@@ -177,7 +193,7 @@ def fetch_units(page, lms: str, sequential: str) -> list[dict]:
     response = page.goto(url)
     if response is None:
         raise LoginRequired(url, "the course site did not answer the sequence request")
-    wall = _login_wall(response.status, response.headers.get("content-type", ""), response.url)
+    wall = _login_wall(response.status, response.headers.get("content-type", ""), response.url, lms)
     if wall:
         raise LoginRequired(url, wall)
     try:
@@ -337,10 +353,13 @@ def capture_set(context, url: str, slug: str, paths) -> dict:
             continue
         first_page = manifest["units"][-1]["pages"][1] if manifest["units"] else 1
         response = page.goto(unit_url(lms, unit["id"]))
-        if response is not None and "/login" in urlsplit(response.url).path:
-            # Mid-run expiry. Everything recorded so far stays, and the next
-            # run after a fresh login picks up here.
-            raise LoginRequired(url, "the session expired partway through the set")
+        # The tab list can be public while the pages are not, so this is the
+        # first real check of the session as well as the mid-run one.
+        # Everything recorded so far stays, and the next run after a fresh
+        # login picks up here.
+        wall = _sent_to_sign_in(response.url, lms) if response is not None else None
+        if wall:
+            raise LoginRequired(url, wall)
         entry = capture_unit(page, slug, unit, first_page, paths, response=response)
         manifest["units"].append(entry)
         save_manifest(manifest_path, manifest)
@@ -411,23 +430,23 @@ LOGIN_TIMEOUT_S = 600
 LOGIN_POLL_S = 2
 
 
-def session_ready(status: int, content_type: str, final_url: str, payload) -> bool:
-    """Whether a sequence API answer shows the browser is signed in."""
-    if _login_wall(status, content_type, final_url):
-        return False
-    try:
-        units_from_sequence(payload)
-    except ValueError:
-        return False
-    return True
+def session_ready(status: int, final_url: str, lms: str) -> bool:
+    """Whether a unit page's answer shows the browser is signed in.
+
+    Judged on a unit page, not the sequence API: on the sites this is for
+    the API lists a set's tabs to anyone, and a poll on it would call the
+    session ready before the user had typed a password.
+    """
+    return status == 200 and _sent_to_sign_in(final_url, lms) is None
 
 
 def login(url: str, state_path: Path, timeout_s: float = LOGIN_TIMEOUT_S) -> None:
     """Open a headed browser at `url`, wait for the user to sign in, save the session.
 
-    Polls the sequence API through the context's request client rather than
-    by navigating, so the tab the user is typing into is never touched. The
-    request client shares the context's cookies, which is all a poll needs.
+    Polls the set's first unit page through the context's request client
+    rather than by navigating, so the tab the user is typing into is never
+    touched. The request client shares the context's cookies, which is all a
+    poll needs.
     """
     import time
 
@@ -443,18 +462,33 @@ def login(url: str, state_path: Path, timeout_s: float = LOGIN_TIMEOUT_S) -> Non
             page = context.new_page()
             page.goto(url)
             deadline = time.monotonic() + timeout_s
+            probe_url = None
             while time.monotonic() < deadline:
-                answer = context.request.get(sequence_url(lms, sequential))
-                try:
-                    payload = answer.json()
-                except ValueError:
-                    payload = None
-                content_type = answer.headers.get("content-type", "")
-                if session_ready(answer.status, content_type, answer.url, payload):
-                    state_path.parent.mkdir(parents=True, exist_ok=True)
-                    context.storage_state(path=str(state_path))
-                    return
+                if probe_url is None:
+                    probe_url = _first_unit_url(context, lms, sequential)
+                if probe_url is not None:
+                    answer = context.request.get(probe_url)
+                    if session_ready(answer.status, answer.url, lms):
+                        state_path.parent.mkdir(parents=True, exist_ok=True)
+                        context.storage_state(path=str(state_path))
+                        return
                 time.sleep(LOGIN_POLL_S)
             raise LoginRequired(url, f"no sign-in seen within {int(timeout_s)} seconds")
         finally:
             browser.close()
+
+
+def _first_unit_url(context, lms: str, sequential: str) -> str | None:
+    """The page to probe for a signed-in session, or None until the API answers.
+
+    The tab list itself may sit behind the wall on some sites, so a refusal
+    here is not an error, just not yet.
+    """
+    answer = context.request.get(sequence_url(lms, sequential))
+    if _login_wall(answer.status, answer.headers.get("content-type", ""), answer.url, lms):
+        return None
+    try:
+        units = units_from_sequence(answer.json())
+    except ValueError:
+        return None
+    return unit_url(lms, units[0]["id"]) if units else None

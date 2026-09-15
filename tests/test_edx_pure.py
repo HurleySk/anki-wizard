@@ -159,12 +159,13 @@ def test_block_hint_says_nothing_extra_when_the_solution_is_shown():
     assert hint == "[problem block]\nCompute.\nThe answer is 4.\n"
 
 
-def test_session_ready_only_for_a_json_sequence_with_items():
+def test_session_ready_only_for_a_unit_page_on_the_lms_origin():
     from anki_wizard.edx import session_ready
 
-    api = "https://lms.test/api/courseware/sequence/x"
-    ok = {"items": [{"id": "block-v1:T+X+1+type@vertical+block@u", "page_title": "U"}]}
-    assert session_ready(200, "application/json", api, ok)
-    assert not session_ready(302, "text/html", "https://lms.test/login?next=/", None)
-    assert not session_ready(403, "application/json", api, {"detail": "no"})
-    assert not session_ready(200, "application/json", api, {"detail": "no"})
+    lms = "https://lms.test"
+    unit = "https://lms.test/xblock/block-v1:T+X+1+type@vertical+block@u"
+    assert session_ready(200, unit, lms)
+    assert not session_ready(200, "https://sso.test/realms/x/openid-connect/auth", lms)
+    assert not session_ready(200, "https://lms.test/login?next=/xblock/x", lms)
+    assert not session_ready(403, unit, lms)
+    assert not session_ready(404, unit, lms)

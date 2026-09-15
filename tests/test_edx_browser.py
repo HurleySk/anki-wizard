@@ -224,7 +224,7 @@ def test_capture_set_raises_login_required_when_the_session_expires_midway(conte
 
         edx.capture_unit = expire_after_first
         try:
-            with pytest.raises(LoginRequired, match="expired"):
+            with pytest.raises(LoginRequired, match="sign in at localhost"):
                 capture_set(context, lms.course_url, "pset", workspace)
         finally:
             edx.capture_unit = original

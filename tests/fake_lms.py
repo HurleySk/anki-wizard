@@ -29,8 +29,10 @@ class FakeLms:
     """Serves the set `units`, a list of (name, title), on 127.0.0.1.
 
     `unit_status` maps a unit name to the HTTP status its page answers with.
-    With `logged_in=False` the API and every unit page redirect to the login
-    page, which is what the LMS does for an expired session.
+    With `logged_in=False` every page redirects to a sign-in page on another
+    origin, which is what the LMS does for an expired session. The real
+    sequence API answers without a login; the fake walls it too so the
+    tab-list path is covered, and the unit-page check is what matters.
     """
 
     def __init__(self, units, unit_status=None, logged_in=True):
@@ -57,11 +59,15 @@ class FakeLms:
             def do_GET(self):
                 path = unquote(urlsplit(self.path).path)
                 outer.requests.append(path)
-                if path.startswith("/login"):
+                if path.startswith("/sso/"):
                     return self._reply(200, "text/html", LOGIN_HTML)
                 if not outer.logged_in:
+                    # The real site sends an unauthenticated browser to an SSO
+                    # host: a different origin, and no "login" in the path.
+                    # "localhost" reaches this same server as another origin.
+                    port = outer._server.server_port
                     self.send_response(302)
-                    self.send_header("Location", f"/login?next={self.path}")
+                    self.send_header("Location", f"http://localhost:{port}/sso/auth?next={self.path}")
                     self.send_header("Content-Length", "0")
                     self.end_headers()
                     return None
