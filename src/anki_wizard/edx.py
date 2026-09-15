@@ -405,3 +405,56 @@ def ingest_edx(url: str, slug: str, paths, headless: bool = True) -> dict:
             return capture_set(context, url, slug, paths)
         finally:
             browser.close()
+
+
+LOGIN_TIMEOUT_S = 600
+LOGIN_POLL_S = 2
+
+
+def session_ready(status: int, content_type: str, final_url: str, payload) -> bool:
+    """Whether a sequence API answer shows the browser is signed in."""
+    if _login_wall(status, content_type, final_url):
+        return False
+    try:
+        units_from_sequence(payload)
+    except ValueError:
+        return False
+    return True
+
+
+def login(url: str, state_path: Path, timeout_s: float = LOGIN_TIMEOUT_S) -> None:
+    """Open a headed browser at `url`, wait for the user to sign in, save the session.
+
+    Polls the sequence API through the context's request client rather than
+    by navigating, so the tab the user is typing into is never touched. The
+    request client shares the context's cookies, which is all a poll needs.
+    """
+    import time
+
+    lms, sequential = parse_course_url(url)
+    sync_playwright, Error = _playwright()
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch(headless=False)
+        except Error as exc:
+            raise PlaywrightMissing(f"chromium could not start: {exc}. {SETUP_HINT}") from exc
+        try:
+            context = browser.new_context()
+            page = context.new_page()
+            page.goto(url)
+            deadline = time.monotonic() + timeout_s
+            while time.monotonic() < deadline:
+                answer = context.request.get(sequence_url(lms, sequential))
+                try:
+                    payload = answer.json()
+                except ValueError:
+                    payload = None
+                content_type = answer.headers.get("content-type", "")
+                if session_ready(answer.status, content_type, answer.url, payload):
+                    state_path.parent.mkdir(parents=True, exist_ok=True)
+                    context.storage_state(path=str(state_path))
+                    return
+                time.sleep(LOGIN_POLL_S)
+            raise LoginRequired(url, f"no sign-in seen within {int(timeout_s)} seconds")
+        finally:
+            browser.close()

@@ -157,3 +157,14 @@ def test_block_hint_says_nothing_extra_when_the_solution_is_shown():
         {"type": "problem", "text": "Compute.\nThe answer is 4.", "solution_shown": True}
     )
     assert hint == "[problem block]\nCompute.\nThe answer is 4.\n"
+
+
+def test_session_ready_only_for_a_json_sequence_with_items():
+    from anki_wizard.edx import session_ready
+
+    api = "https://lms.test/api/courseware/sequence/x"
+    ok = {"items": [{"id": "block-v1:T+X+1+type@vertical+block@u", "page_title": "U"}]}
+    assert session_ready(200, "application/json", api, ok)
+    assert not session_ready(302, "text/html", "https://lms.test/login?next=/", None)
+    assert not session_ready(403, "application/json", api, {"detail": "no"})
+    assert not session_ready(200, "application/json", api, {"detail": "no"})
