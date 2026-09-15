@@ -102,12 +102,18 @@ mathematics, and LaTeX source in a terminal is unreadable.
 
 This writes `pad/pad.html` and opens it. Block types are `prose`, `math`,
 `steps`, `figure` (a matplotlib figure, embedded), `animation` (a matplotlib
-`Animation`, embedded with a play/pause/step/scrub player), `image` (bytes or a
+`Animation`, embedded with a play/pause/step/scrub player), `surface` (an
+interactive 3D surface from `x`, `y`, `z` arrays, drawn by plotly.js and
+rotatable in the page), `image` (bytes or a
 path, embedded), `note` (an Anki note, its cloze deletions revealed and its
 media inlined), `heading` (a section name, checked as prose unless `verbatim`), and `formula` (a cheat sheet
 entry: label, displayed TeX, optional note). The page stays a single file: frames and images are inlined, so
 an animation of 30 to 60 frames costs roughly half a megabyte to a megabyte, and
-one that would exceed 8 MB is refused.
+one that would exceed 8 MB is refused. A `surface` inlines its data but loads
+plotly.js from the CDN, as the page already loads MathJax, and it needs WebGL:
+VS Code's Simple Browser does not reliably provide that, so when it is missing
+the page shows its own address in place of the plot, and that address opens in
+any browser.
 
 Set `pad_viewer` in `config.yaml` to choose where it appears:
 

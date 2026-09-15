@@ -248,6 +248,28 @@ Frames export at the figure's own dpi (100 by default, against 150 for a
 beside a still. Set `interval` on the animation for playback speed; the same
 Animation object may appear more than once on a page.
 
+**A `surface` block is for when the shape is the lesson.** It takes `x`,
+`y`, and `z` as numpy arrays or lists and renders a surface the reader can
+rotate and zoom, drawn by plotly.js from the CDN. Use it where a single
+angle hides the claim: a joint density and the ridge along its correlation,
+a likelihood surface and where it peaks, a saddle at a critical point that
+looks like a minimum from one side and a maximum from the other. A contour
+plot in a `figure` often says it, and a `figure` with a 3D axes says it when
+one angle is enough; a surface is for when the reader needs to choose the
+angle.
+
+The convention is numpy's: `z[i][j]` sits at `y[i]`, `x[j]`, so evaluate
+\(f(X, Y)\) on `np.meshgrid(x, y)` and pass either the 1D axes or `X` and
+`Y` themselves. Fifty to a hundred points per axis is plenty; the renderer
+refuses a grid over 250,000 cells and names the shape. A NaN in `z` is a
+hole, which is how a density clipped to a region is drawn. Axis labels
+(`xlabel`, `ylabel`, `zlabel`) are plain text and are never typeset, so
+write θ₁ and σ² as Unicode and put the `\(...\)` in the caption; a label
+carrying delimiters is refused. The scene needs WebGL, which VS Code's
+Simple Browser does not reliably provide: when it is missing the pad shows
+the page's address in its place, and the same address opens in any browser.
+`pad_viewer: browser` in `config.yaml` skips that step.
+
 ## The why field
 
 Cards have an optional third field, `why`, for the reasoning behind the answer.
