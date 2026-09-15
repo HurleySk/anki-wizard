@@ -181,3 +181,120 @@ def fetch_units(page, lms: str, sequential: str) -> list[dict]:
         return units_from_sequence(response.json())
     except ValueError as exc:
         raise LoginRequired(url, str(exc)) from exc
+
+
+BLOCK_SELECTOR = "div.vert-mod > div.vert"
+SHOW_ANSWER_SELECTOR = "button.show"
+# The solution edX inserts after Show Answer, in either markup generation:
+# the classic `.detailed-solution` div, or content filled into `.solution-span`.
+SOLUTION_SELECTOR = ".detailed-solution, .solution-span > *"
+SKIPPED_BLOCK_TYPES = frozenset({"video", "discussion"})
+SOLUTION_TIMEOUT_MS = 10_000
+TYPESET_TIMEOUT_MS = 30_000
+
+# MathJax 2 exposes its queue; a page without MathJax has nothing to wait for.
+TYPESET_DONE_JS = """
+() => {
+  const mj = window.MathJax;
+  if (!mj || !mj.Hub || !mj.Hub.queue) return true;
+  return mj.Hub.queue.pending === 0 && mj.Hub.queue.running === 0;
+}
+"""
+
+# One pass over the page's blocks, reporting each one's type, its text with
+# every formula's TeX put back in place of the rendered spans, and whether a
+# solution is on screen. Done in one evaluate rather than per-block calls so
+# the page is read at a single instant. The Python string doubles every
+# backslash once, so the JS sees `\\(`, which its literal yields as `\(`.
+BLOCK_INFO_JS = """
+(selectors) => {
+  const [blockSelector, solutionSelector] = selectors;
+  const visible = (el) => el.getClientRects().length > 0;
+  return Array.from(document.querySelectorAll(blockSelector)).map((vert) => {
+    const xblock = vert.querySelector("[data-block-type]");
+    const type = xblock ? xblock.getAttribute("data-block-type") : "unknown";
+    const solutionShown = Array.from(vert.querySelectorAll(solutionSelector)).some(visible);
+    const clone = vert.cloneNode(true);
+    clone.querySelectorAll("[hidden]").forEach((el) => el.remove());
+    clone.querySelectorAll("script[type^='math/tex']").forEach((script) => {
+      const display = (script.getAttribute("type") || "").includes("mode=display");
+      const tex = script.textContent.trim();
+      const text = display ? "\\\\[" + tex + "\\\\]" : "\\\\(" + tex + "\\\\)";
+      script.replaceWith(document.createTextNode(text));
+    });
+    clone.querySelectorAll(
+      ".MathJax, .MathJax_Display, .MathJax_Preview, .MathJax_CHTML, mjx-container, script, style, .sr-only"
+    ).forEach((el) => el.remove());
+    const text = clone.textContent
+      .replace(/[ \\t]+/g, " ")
+      .replace(/ *\\n */g, "\\n")
+      .replace(/\\n{2,}/g, "\\n")
+      .trim();
+    return { type, text, solution_shown: solutionShown };
+  });
+}
+"""
+
+
+def _wait_for_typeset(page) -> None:
+    page.wait_for_load_state("networkidle")
+    page.wait_for_function(TYPESET_DONE_JS, timeout=TYPESET_TIMEOUT_MS)
+
+
+def _reveal_solutions(page) -> None:
+    """Click every Show Answer and wait for its solution, one problem at a time.
+
+    A button that never yields a solution -- the course hides it, the
+    deadline passed -- is left after the timeout; the hint records that no
+    solution was shown, so the capture still goes through.
+    """
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    buttons = page.locator(f"{BLOCK_SELECTOR} {SHOW_ANSWER_SELECTOR}")
+    for index in range(buttons.count()):
+        button = buttons.nth(index)
+        if not button.is_visible() or button.is_disabled():
+            continue
+        button.click()
+        block = button.locator(
+            "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' vert ')][1]"
+        )
+        try:
+            block.locator(SOLUTION_SELECTOR).first.wait_for(
+                state="visible", timeout=SOLUTION_TIMEOUT_MS
+            )
+        except PlaywrightTimeout:
+            continue
+
+
+def capture_unit(page, slug: str, unit: dict, first_page: int, paths, response=None) -> dict:
+    """Capture one tab, already navigated to in `page`, as pages from `first_page`.
+
+    Returns the manifest entry for the unit. `response` is what `page.goto`
+    returned; a failed status means the tab is recorded with an empty range
+    and the reason rather than captured, so the outline stays honest about
+    the set's shape and the run goes on.
+    """
+    entry = {"id": unit["id"], "title": unit["title"]}
+    if response is not None and response.status >= 400:
+        entry["pages"] = [first_page, first_page]
+        entry["reason"] = f"unit page answered {response.status}"
+        return entry
+
+    _wait_for_typeset(page)
+    _reveal_solutions(page)
+    blocks = page.evaluate(BLOCK_INFO_JS, [BLOCK_SELECTOR, SOLUTION_SELECTOR])
+    verts = page.locator(BLOCK_SELECTOR)
+
+    number = first_page
+    for index, block in enumerate(blocks):
+        if block["type"] in SKIPPED_BLOCK_TYPES:
+            continue
+        verts.nth(index).screenshot(path=str(paths.page_image(slug, number)))
+        paths.page_text(slug, number).write_text(block_hint(block))
+        number += 1
+
+    entry["pages"] = [first_page, number]
+    if number == first_page:
+        entry["reason"] = "no capturable blocks on this tab"
+    return entry
