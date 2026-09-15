@@ -11,12 +11,17 @@ The page uses the same MathJax delimiters as the cards -- \\(...\\) and \\[...\\
 
 import base64
 import io
+import json
 import re
 import uuid
 from html import escape
 from pathlib import Path
 
 MATHJAX_CDN = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+
+# Pinned where MathJax is not: plotly majors change behaviour, and the scene
+# helper below is written against this one.
+PLOTLY_CDN = "https://cdn.jsdelivr.net/npm/plotly.js-dist-min@4.1.0/plotly.min.js"
 
 _PAGE = """<!doctype html>
 <html lang="en">
@@ -32,7 +37,7 @@ window.MathJax = {{
   }}
 }};
 </script>
-<script id="MathJax-script" async src="{cdn}"></script>
+<script id="MathJax-script" async src="{cdn}"></script>{scripts}
 <style>{css}</style>
 </head>
 <body{body_class}>
@@ -86,6 +91,11 @@ figcaption {
   text-align: center;
   margin-top: 0.6rem;
 }
+/* A WebGL scene sizes itself to its container, so the container carries
+   the shape. */
+.scene { width: 100%; aspect-ratio: 4 / 3; }
+.scene-fallback { color: var(--muted); font-size: 14px; font-style: italic; }
+.scene-fallback code { font: 13px ui-monospace, monospace; font-style: normal; }
 hr { border: 0; border-top: 1px solid var(--rule); margin: 2.5rem 0; }
 .note-field { margin: 1.5rem 0; }
 .field-name {
@@ -125,6 +135,7 @@ def render_html(
     return _PAGE.format(
         title=escape(title),
         cdn=MATHJAX_CDN,
+        scripts=_scene_scripts(blocks),
         css=_CSS,
         body_class=f' class="{escape(body_class)}"' if body_class else "",
         body="\n".join(_render_block(b) for b in blocks),
@@ -150,6 +161,8 @@ def _render_block(block: dict) -> str:
         return _render_figure(block)
     if kind == "animation":
         return _render_animation(block)
+    if kind == "surface":
+        return _render_surface(block)
     if kind == "note":
         return _render_note(block)
     if kind == "heading":
@@ -433,6 +446,115 @@ def _render_animation(block: dict) -> str:
     caption = block.get("caption")
     caption_html = f"\n<figcaption>{_prose(caption)}</figcaption>" if caption else ""
     return f"<figure>{player}{caption_html}</figure>"
+
+
+# Block types that draw into a WebGL scene and so need plotly on the page.
+# A set so that a later scatter or curve block is one more entry.
+_SCENE_BLOCKS = frozenset({"surface"})
+
+# Runs once per page. It reads the page's own CSS variables so the scene
+# follows the light and dark palette with no second palette to keep in step,
+# and it tests for WebGL itself: plotly's banner for a missing context says
+# only that it is missing, and this one says what to do. The address is
+# text, not a link, because a link inside VS Code's Simple Browser opens in
+# the iframe that just failed.
+_SCENE_HELPER = """
+function padScene(id, payload) {
+  var host = document.getElementById(id);
+  var gl = null;
+  try {
+    var probe = document.createElement("canvas");
+    gl = probe.getContext("webgl2") || probe.getContext("webgl");
+  } catch (e) {}
+  if (!gl) {
+    var note = document.createElement("p");
+    note.className = "scene-fallback";
+    var address = document.createElement("code");
+    address.textContent = location.href;
+    note.append(
+      "This surface needs WebGL, which this viewer does not provide. " +
+      "Open this same address in a browser: ",
+      address,
+      ". Setting pad_viewer: browser in config.yaml makes that the default."
+    );
+    host.replaceWith(note);
+    return;
+  }
+  var style = getComputedStyle(document.documentElement);
+  var ink = style.getPropertyValue("--ink").trim();
+  var rule = style.getPropertyValue("--rule").trim();
+  function axis(title) {
+    return {title: {text: title}, color: ink, gridcolor: rule,
+            zerolinecolor: rule, showbackground: false};
+  }
+  Plotly.newPlot(host, payload.traces, {
+    paper_bgcolor: "rgba(0,0,0,0)",
+    margin: {l: 0, r: 0, t: 0, b: 0},
+    font: {color: ink, family: "Georgia, serif"},
+    scene: {xaxis: axis(payload.labels.x), yaxis: axis(payload.labels.y),
+            zaxis: axis(payload.labels.z)}
+  }, {responsive: true, displaylogo: false});
+}
+"""
+
+
+def _scene_scripts(blocks: list[dict]) -> str:
+    """The head's share of a 3D scene: plotly from the CDN, and the helper.
+
+    Only on a page that has a scene block, so every other page is as it was.
+    The plotly tag is synchronous where MathJax's is async, because each
+    block's inline script calls Plotly the moment it runs.
+    """
+    if not any(block.get("type") in _SCENE_BLOCKS for block in blocks):
+        return ""
+    return (
+        f'\n<script src="{PLOTLY_CDN}"></script>'
+        f"\n<script>{_SCENE_HELPER}</script>"
+    )
+
+
+def _render_surface(block: dict) -> str:
+    return _render_scene([_surface_trace(block)], block)
+
+
+def _render_scene(traces: list[dict], block: dict) -> str:
+    """Traces and labels as one figure that the page's helper draws.
+
+    Knows nothing about what kind of traces it holds, which is what lets a
+    scatter or a curve be added later as another trace builder.
+    """
+    labels = {axis: block.get(f"{axis}label") for axis in "xyz"}
+    payload = json.dumps({"traces": traces, "labels": labels}, allow_nan=False)
+    # Two blocks on one page must not share an id, for the same reason the
+    # animation player re-mints its token.
+    scene_id = f"scene-{uuid.uuid4().hex}"
+    return (
+        f'<figure><div class="scene" id="{scene_id}"></div>\n'
+        f'<script>padScene("{scene_id}", {payload});</script></figure>'
+    )
+
+
+def _surface_trace(block: dict) -> dict:
+    z, _ = _grid(block["z"], "z")
+    x, _ = _grid(block["x"], "x")
+    y, _ = _grid(block["y"], "y")
+    return {
+        "type": "surface",
+        "x": x,
+        "y": y,
+        "z": z,
+        "colorscale": "Viridis",
+        "showscale": False,
+    }
+
+
+def _grid(value, name: str) -> tuple[list, tuple[int, ...]]:
+    """A block's array as nested lists, with its shape."""
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value[0], list):
+        return value, (len(value), len(value[0]))
+    return value, (len(value),)
 
 
 # Anki writes media as a plain filename in the field's HTML, which resolves

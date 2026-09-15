@@ -2,7 +2,7 @@ import re
 
 import pytest
 
-from anki_wizard.render import render_html
+from anki_wizard.render import PLOTLY_CDN, render_html
 
 
 def test_prose_block_appears_in_the_page():
@@ -247,6 +247,51 @@ def test_oversized_animation_is_refused_with_advice():
     with pytest.raises(ValueError, match=r"9\.0 MB.*frames"):
         render_html([{"type": "animation", "animation": Huge()}])
 
+
+
+# --- surface: an interactive 3D scene ------------------------------------
+
+
+def _a_surface(**overrides):
+    """A 2x3 grid: z[i][j] sits at y[i], x[j], numpy's meshgrid convention."""
+    block = {
+        "type": "surface",
+        "x": [0.0, 1.0, 2.0],
+        "y": [0.0, 1.0],
+        "z": [[0.0, 1.0, 4.0], [1.0, 2.0, 5.0]],
+    }
+    block.update(overrides)
+    return block
+
+
+def test_surface_emits_a_scene_with_its_data():
+    """The data is inlined as JSON and handed to the page's scene helper.
+
+    The library itself comes from the CDN, as MathJax does: 3.5 MB of plotly
+    inlined per page is not a page anyone opens twice.
+    """
+    html = render_html([_a_surface()])
+    assert '<figure><div class="scene" id="scene-' in html
+    assert 'padScene("scene-' in html
+    assert '"type": "surface"' in html
+    assert '"z": [[0.0, 1.0, 4.0], [1.0, 2.0, 5.0]]' in html
+    assert f'<script src="{PLOTLY_CDN}"></script>' in html
+    assert "function padScene" in html
+    assert "needs WebGL" in html
+
+
+def test_plotly_loads_once_for_any_number_of_surfaces():
+    html = render_html([_a_surface(), _a_surface()])
+    assert html.count(PLOTLY_CDN) == 1
+    assert html.count("function padScene") == 1
+    assert html.count('class="scene"') == 2
+
+
+def test_a_page_without_a_surface_loads_no_plotly():
+    """Every other page is as it was: no 3.5 MB script, no helper."""
+    html = render_html([{"type": "prose", "text": "The mean of an indicator."}])
+    assert "plotly" not in html.lower()
+    assert "padScene" not in html
 
 
 def test_markup_in_prose_is_refused():
