@@ -294,6 +294,66 @@ def test_a_page_without_a_surface_loads_no_plotly():
     assert "padScene" not in html
 
 
+def test_numpy_arrays_and_meshgrid_axes_render():
+    """Both axis shapes, because both are what an author holds: the 1D
+    axes they built, or the X and Y meshgrid returned and f(X, Y) ran on.
+    """
+    import json
+
+    import numpy as np
+
+    x = np.linspace(0.0, 1.0, 3)
+    y = np.linspace(0.0, 1.0, 2)
+    X, Y = np.meshgrid(x, y)
+    html = render_html([{"type": "surface", "x": X, "y": Y, "z": X**2 + Y}])
+    assert json.dumps(X.tolist()) in html
+    assert json.dumps((X**2 + Y).tolist()) in html
+
+
+def test_non_finite_z_becomes_a_hole():
+    """plotly draws null as a gap, which is how a density clipped to a
+    region is drawn. NaN must never reach the page as a literal: json
+    would write it as a JavaScript NaN, which plotly does not treat as a
+    hole.
+    """
+    z = [[0.0, float("nan"), 4.0], [1.0, float("inf"), 5.0]]
+    html = render_html([_a_surface(z=z)])
+    assert '"z": [[0.0, null, 4.0], [1.0, null, 5.0]]' in html
+    assert "NaN" not in html
+    assert "Infinity" not in html
+
+
+def test_a_string_in_z_is_refused_naming_its_position():
+    """plotly drops the whole trace on a string, with nothing on the page."""
+    with pytest.raises(ValueError, match=r"z\[0\]\[1\] is 'a', not a number"):
+        render_html([_a_surface(z=[[0.0, "a", 4.0], [1.0, 2.0, 5.0]])])
+
+
+def test_a_non_finite_axis_value_is_refused():
+    """Only z may have holes; an axis coordinate that is not a number
+    places nothing."""
+    with pytest.raises(ValueError, match=r"x\[1\] is nan.*finite"):
+        render_html([_a_surface(x=[0.0, float("nan"), 2.0])])
+
+
+def test_a_ragged_z_is_refused():
+    with pytest.raises(ValueError, match="z is ragged: row 1 has 2 entries where row 0 has 3"):
+        render_html([_a_surface(z=[[0.0, 1.0, 4.0], [1.0, 2.0]])])
+
+
+def test_two_surfaces_get_distinct_ids():
+    html = render_html([_a_surface(), _a_surface()])
+    assert len(set(re.findall(r"scene-[0-9a-f]{32}", html))) == 2
+
+
+def test_scene_payload_cannot_close_the_script_tag():
+    """A label is already refused for markup; this is the second lock on
+    the same door, since the payload lands inside a script element."""
+    html = render_html([_a_surface(xlabel="1</2")])
+    assert '1<\\/2' in html
+    assert "1</2" not in html
+
+
 def test_markup_in_prose_is_refused():
     """Prose is plain text, so markup in it is a mistake worth failing on.
 

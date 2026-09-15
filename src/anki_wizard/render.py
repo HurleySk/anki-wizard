@@ -12,6 +12,7 @@ The page uses the same MathJax delimiters as the cards -- \\(...\\) and \\[...\\
 import base64
 import io
 import json
+import math
 import re
 import uuid
 from html import escape
@@ -525,6 +526,9 @@ def _render_scene(traces: list[dict], block: dict) -> str:
     """
     labels = {axis: block.get(f"{axis}label") for axis in "xyz"}
     payload = json.dumps({"traces": traces, "labels": labels}, allow_nan=False)
+    # Inside a script element "</" is the only sequence that can end it, and
+    # "<\/" is the same string to JavaScript.
+    payload = payload.replace("</", "<\\/")
     # Two blocks on one page must not share an id, for the same reason the
     # animation player re-mints its token.
     scene_id = f"scene-{uuid.uuid4().hex}"
@@ -535,7 +539,7 @@ def _render_scene(traces: list[dict], block: dict) -> str:
 
 
 def _surface_trace(block: dict) -> dict:
-    z, _ = _grid(block["z"], "z")
+    z, _ = _grid(block["z"], "z", holes=True)
     x, _ = _grid(block["x"], "x")
     y, _ = _grid(block["y"], "y")
     return {
@@ -548,13 +552,49 @@ def _surface_trace(block: dict) -> dict:
     }
 
 
-def _grid(value, name: str) -> tuple[list, tuple[int, ...]]:
-    """A block's array as nested lists, with its shape."""
+def _grid(value, name: str, holes: bool = False) -> tuple[list, tuple[int, ...]]:
+    """A block's array as nested lists, with its shape, every entry checked.
+
+    Anything with a tolist() is converted first, so numpy arrays and plain
+    lists arrive the same way. With holes=True a non-finite entry becomes
+    None, which plotly draws as a gap; without it one is refused, since an
+    axis coordinate that is not a number places nothing.
+    """
     if hasattr(value, "tolist"):
         value = value.tolist()
-    if isinstance(value[0], list):
-        return value, (len(value), len(value[0]))
-    return value, (len(value),)
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{name} must be a non-empty 1D or 2D array")
+    if not isinstance(value[0], list):
+        data = [_number(v, name, (i,), holes) for i, v in enumerate(value)]
+        return data, (len(value),)
+    cols = len(value[0])
+    data = []
+    for i, row in enumerate(value):
+        if not isinstance(row, list) or len(row) != cols:
+            found = len(row) if isinstance(row, list) else "no"
+            raise ValueError(
+                f"{name} is ragged: row {i} has {found} entries where row 0 has {cols}"
+            )
+        data.append([_number(v, name, (i, j), holes) for j, v in enumerate(row)])
+    return data, (len(value), cols)
+
+
+def _number(value, name: str, position: tuple[int, ...], holes: bool):
+    where = name + "".join(f"[{i}]" for i in position)
+    # bool is an int to isinstance, and True in a grid is a bug, not a 1.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(
+            f"{where} is {value!r}, not a number; plotly would drop the whole "
+            "surface without a word"
+        )
+    if not math.isfinite(value):
+        if holes:
+            return None
+        raise ValueError(
+            f"{where} is {value!r}; an axis coordinate must be finite, and "
+            "only z may have holes"
+        )
+    return value
 
 
 # Anki writes media as a plain filename in the field's HTML, which resolves
