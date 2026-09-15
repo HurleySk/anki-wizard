@@ -31,6 +31,16 @@ class Paths:
     def cursor_file(self, slug: str) -> Path:
         return self.source_dir(slug) / "cursor.json"
 
+    def source_manifest(self, slug: str) -> Path:
+        # The analog of source.pdf for a source captured from a course site:
+        # it says which problem set the slug holds and how far the capture got.
+        return self.source_dir(slug) / "source.json"
+
+    def edx_auth_state(self) -> Path:
+        # Under sources/ so the existing gitignore covers it. It is a login
+        # session, not user state to keep, and must never be committed.
+        return self.root / "sources" / ".auth" / "edx.json"
+
     def ledger_file(self, slug: str) -> Path:
         # Document slugs and deck slugs share this one flat namespace, and both
         # are lowercase-hyphenated, so a deck named "Stats Ch1" lands in the

@@ -5,7 +5,9 @@ from typing import Literal
 
 CardState = Literal["proposed", "approved", "rejected", "pushed", "orphaned"]
 FormulaState = Literal["proposed", "approved", "rejected"]
-Structure = Literal["sections", "slides", "pages"]
+# "units" is a source captured from a course site: a section is one tab of a
+# problem set and spans one image per block on that tab.
+Structure = Literal["sections", "slides", "pages", "units"]
 
 
 @dataclass

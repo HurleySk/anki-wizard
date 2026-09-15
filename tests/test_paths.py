@@ -90,3 +90,13 @@ def test_cheatsheet_page_lives_under_the_pad():
     """The pad server is rooted at pad/, so a page under it gets a stable URL."""
     p = Paths(root=Path("/tmp/x"))
     assert p.pad_dir() in p.cheatsheet_page("stats").parents
+
+
+def test_source_manifest_sits_beside_the_outline(tmp_path):
+    p = Paths(root=tmp_path)
+    assert p.source_manifest("pset-1") == tmp_path / "sources" / "pset-1" / "source.json"
+
+
+def test_edx_auth_state_lives_under_sources(tmp_path):
+    p = Paths(root=tmp_path)
+    assert p.edx_auth_state() == tmp_path / "sources" / ".auth" / "edx.json"
