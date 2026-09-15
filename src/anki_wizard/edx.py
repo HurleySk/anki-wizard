@@ -353,3 +353,55 @@ def capture_set(context, url: str, slug: str, paths) -> dict:
     if not cursor_path.exists():
         save_cursor(cursor_path, load_cursor(cursor_path))
     return _result(slug, outline)
+
+
+class PlaywrightMissing(RuntimeError):
+    """Playwright or its browser is not installed. Named before anything is written."""
+
+
+SETUP_HINT = (
+    "Install the web extra and its browser:\n\n"
+    "    uv sync --extra web\n"
+    "    uv run playwright install chromium\n"
+)
+
+VIEWPORT = {"width": 1100, "height": 900}
+
+
+def _playwright():
+    try:
+        from playwright.sync_api import Error, sync_playwright
+    except ImportError as exc:
+        raise PlaywrightMissing(f"playwright is not installed. {SETUP_HINT}") from exc
+    return sync_playwright, Error
+
+
+def ingest_edx(url: str, slug: str, paths, headless: bool = True) -> dict:
+    """Capture the problem set at `url` into `sources/<slug>/`.
+
+    Everything that can be refused is refused before the browser starts: a
+    URL that names no problem set, a slug holding a different set, a missing
+    session. The browser itself opens headless on the saved session; the
+    headed login is `scripts/edx_login.py`, run by the user, never here.
+    """
+    _, sequential = parse_course_url(url)
+    existing_manifest(paths.source_manifest(slug), sequential)
+    state = paths.edx_auth_state()
+    if not state.exists():
+        raise LoginRequired(url, f"no saved session at {state}")
+
+    sync_playwright, Error = _playwright()
+    with sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch(headless=headless)
+        except Error as exc:
+            raise PlaywrightMissing(f"chromium could not start: {exc}. {SETUP_HINT}") from exc
+        try:
+            # Scale 2 so small subscripts survive; a fixed width so a block's
+            # line breaks match what the reader saw on the site.
+            context = browser.new_context(
+                storage_state=str(state), viewport=VIEWPORT, device_scale_factor=2
+            )
+            return capture_set(context, url, slug, paths)
+        finally:
+            browser.close()

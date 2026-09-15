@@ -7,7 +7,7 @@ config.yaml once and supplies those arguments.
 
 from pathlib import Path
 
-from anki_wizard import cheatsheet, collection, tools
+from anki_wizard import cheatsheet, collection, edx, tools
 from anki_wizard.anki import AnkiClient
 from anki_wizard.config import load_config
 from anki_wizard.paths import Paths
@@ -21,6 +21,9 @@ class Session:
 
     def ingest(self, pdf: Path, slug: str, dpi: int = 150) -> dict:
         return tools.ingest_source(pdf, slug=slug, paths=self.paths, dpi=dpi)
+
+    def ingest_edx(self, url: str, slug: str) -> dict:
+        return edx.ingest_edx(url, slug=slug, paths=self.paths)
 
     def progress(self, slug: str) -> dict:
         return tools.get_progress(slug, paths=self.paths)

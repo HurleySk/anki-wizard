@@ -128,3 +128,21 @@ def test_session_cheat_sheet_flow_supplies_deck_tags_and_lecture(tmp_path):
     assert result["path"] == str(page)
     assert result["formulas"] == 1
     assert r"any constant \(a\)" in page.read_text()
+
+
+def test_session_ingest_edx_passes_paths_through(tmp_path, monkeypatch):
+    from anki_wizard import edx
+
+    seen = {}
+
+    def fake_ingest(url, slug, paths, headless=True):
+        seen.update(url=url, slug=slug, paths=paths, headless=headless)
+        return {"slug": slug}
+
+    monkeypatch.setattr(edx, "ingest_edx", fake_ingest)
+    s = Session(root=tmp_path)
+    url = "https://lms.test/x/block-v1:T+X+1+type@sequential+block@ps1"
+    assert s.ingest_edx(url, "pset") == {"slug": "pset"}
+    assert seen["slug"] == "pset"
+    assert seen["paths"] == s.paths
+    assert seen["headless"] is True
