@@ -13,7 +13,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "reportlab>=4.0", "ruff>=0.6"]
+web = ["playwright>=1.47"]
+dev = ["pytest>=8.0", "reportlab>=4.0", "ruff>=0.6", "playwright>=1.47"]
 
 [build-system]
 requires = ["hatchling"]
