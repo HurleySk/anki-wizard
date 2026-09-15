@@ -400,8 +400,14 @@ split exists so Anki introduces a lecture's concept cards before the problems
 that use them, and so the two can carry different daily limits. A card whose
 front is a problem statement (tagged `worked-problem`) files there; a concept
 card drawn from a problem's solution, such as a formula the solution used,
-files in the lecture itself. A problem that spans lectures -- a problem set,
-a unit review -- goes in `Problems` directly under the unit.
+files in the lecture itself.
+
+**A problem set's problems go in `Problems` directly under the unit, split
+by subject**, not under any one lecture and not one deck per set:
+`Unit II: Foundation of Inference::Problems::Diagonalization`. A set draws
+on several lectures at once, and the subject is what the reader will want to
+drill, so the subject is the grouping. Confirm each subject name with the
+user as for any deck name. A unit review files the same way.
 
 Refiling a pushed card is `revise_card(..., lecture=...)`, which moves it in
 Anki with its scheduling intact -- review history lives on the card, not the
@@ -418,6 +424,30 @@ range and there is nothing to guard against.
 
 Card only what `read_section` returned. Reaching into an adjacent page by hand
 duplicates cards across sections and strands coverage.
+
+## Problem sets from a course site
+
+`ingest_edx(url, slug)` captures an Open edX problem set the way
+`ingest_source` ingests a PDF; the README has the setup. What to know when
+working one:
+
+- **A section is one tab**, and its pages are that tab's blocks in order:
+  setup text first, then the problems that use it. Read the whole section
+  before carding any problem on it, since the setup is the context the
+  problem statement assumes.
+- **The solution is in the image.** Show Answer was clicked at capture time,
+  so a problem's image carries its statement and its solution together. A
+  hint ending in "no solution was shown for this problem" means the site
+  offered none; the back must then come from working it, and the card's why
+  should say so.
+- Cards from a set are worked problems: tag `worked-problem`, and file under
+  the unit's `Problems` deck split by subject, as described under lectures
+  and subdecks. Confirm the unit and the subject names with the user.
+- **The tool never signs in.** When it raises `LoginRequired`, hand the user
+  the command it names and stop; the login is theirs to do in the window it
+  opens. Do not retry, and do not look for another way in.
+- A tab recorded with a reason (the site answered 404, or it held only a
+  video) is an empty section: `skip_section` it with that reason.
 
 ## Card conventions
 
