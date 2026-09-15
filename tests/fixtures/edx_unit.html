@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Diagonalization</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  .vert { padding: 16px; border-bottom: 1px solid #ccc; }
+  .detailed-solution[hidden] { display: none; }
+  .video-player { height: 120px; background: #222; }
+</style>
+</head>
+<body>
+<div class="vert-mod">
+
+  <div class="vert vert-0" data-id="block-v1:T+X+1+type@html+block@setup">
+    <div class="xblock xblock-student_view xmodule_HtmlBlock" data-block-type="html">
+      <h3>Setup</h3>
+      <p>Let <span class="MathJax">A</span><script type="math/tex">A</script> be a symmetric matrix.</p>
+    </div>
+  </div>
+
+  <div class="vert vert-1" data-id="block-v1:T+X+1+type@problem+block@p1">
+    <div class="xblock xblock-student_view xmodule_ProblemBlock" data-block-type="problem">
+      <div class="problems-wrapper">
+        <h3>Problem 1</h3>
+        <p>Compute <span class="MathJax">σ²</span><script type="math/tex">\sigma^2</script>.</p>
+        <button class="show">Show Answer</button>
+        <div class="detailed-solution" hidden>
+          <p>The answer is</p>
+          <span class="MathJax_Display">σ² = 4</span><script type="math/tex; mode=display">\sigma^2 = 4</script>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vert vert-2" data-id="block-v1:T+X+1+type@video+block@v1">
+    <div class="xblock xblock-student_view xmodule_VideoBlock" data-block-type="video">
+      <div class="video-player">video</div>
+    </div>
+  </div>
+
+  <div class="vert vert-3" data-id="block-v1:T+X+1+type@problem+block@p2">
+    <div class="xblock xblock-student_view xmodule_ProblemBlock" data-block-type="problem">
+      <div class="problems-wrapper">
+        <h3>Problem 2</h3>
+        <p>Find the trace of <span class="MathJax">A</span><script type="math/tex">A</script>.</p>
+        <button class="show">Show Answer</button>
+        <div class="detailed-solution" hidden><p>The trace is the sum of the eigenvalues.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vert vert-4" data-id="block-v1:T+X+1+type@problem+block@p3">
+    <div class="xblock xblock-student_view xmodule_ProblemBlock" data-block-type="problem">
+      <div class="problems-wrapper">
+        <h3>Problem 3</h3>
+        <p>Is every symmetric matrix diagonalizable?</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+  document.querySelectorAll("button.show").forEach(function (button) {
+    button.addEventListener("click", function () {
+      button.closest(".problems-wrapper").querySelector(".detailed-solution").hidden = false;
+      button.disabled = true;
+    });
+  });
+</script>
+</body>
+</html>

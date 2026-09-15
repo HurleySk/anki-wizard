@@ -133,3 +133,51 @@ def block_hint(block: dict) -> str:
     if block["type"] == "problem" and not block["solution_shown"]:
         lines.append(NO_SOLUTION_LINE)
     return "\n".join(lines) + "\n"
+
+
+class LoginRequired(RuntimeError):
+    """The saved session is missing or no longer accepted by the course site.
+
+    Raised before anything is captured, so a login page is never written down
+    as a tab. The tool does not retry or prompt: the fix is the headed login
+    script, which is the user's to run.
+    """
+
+    def __init__(self, url: str, detail: str):
+        super().__init__(
+            f"{detail}. Sign in once with\n\n"
+            f"    uv run python {LOGIN_SCRIPT} '{url}'\n\n"
+            "and run the ingest again."
+        )
+
+
+def _login_wall(status: int, content_type: str, final_url: str) -> str | None:
+    """Why a response looks like the login wall, or None when it does not."""
+    if status in (401, 403):
+        return f"the course site answered {status}"
+    if "/login" in urlsplit(final_url).path:
+        return "the course site redirected to its login page"
+    if "json" not in content_type:
+        return f"the course site answered with {content_type or 'no content type'} rather than JSON"
+    return None
+
+
+def fetch_units(page, lms: str, sequential: str) -> list[dict]:
+    """The tab list, fetched through the page so its cookies and routes apply.
+
+    A navigation rather than a background request on purpose: Playwright's
+    request context bypasses route interception, and the tests serve the API
+    through routes. The response body is the raw JSON whatever the browser
+    draws around it.
+    """
+    url = sequence_url(lms, sequential)
+    response = page.goto(url)
+    if response is None:
+        raise LoginRequired(url, "the course site did not answer the sequence request")
+    wall = _login_wall(response.status, response.headers.get("content-type", ""), response.url)
+    if wall:
+        raise LoginRequired(url, wall)
+    try:
+        return units_from_sequence(response.json())
+    except ValueError as exc:
+        raise LoginRequired(url, str(exc)) from exc
