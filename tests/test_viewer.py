@@ -7,6 +7,7 @@ not happen during a test run.
 """
 
 import json
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -15,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from anki_wizard import viewer
+from anki_wizard.paths import Paths
 
 
 @pytest.fixture
@@ -44,6 +46,33 @@ def browser(monkeypatch):
 def fetch(url: str) -> tuple[int, str]:
     with urllib.request.urlopen(url, timeout=5) as response:
         return response.status, response.read().decode()
+
+
+def fetch_response(url: str) -> tuple[int, dict, bytes]:
+    with urllib.request.urlopen(url, timeout=5) as response:
+        return response.status, dict(response.headers), response.read()
+
+
+@pytest.fixture
+def problem_set(pad):
+    """A captured set under the state root, beside a file that must stay
+    unreachable."""
+    paths = Paths(root=pad.parent)
+    paths.ensure_source_dirs("ps")
+    paths.source_manifest("ps").write_text(
+        json.dumps(
+            {
+                "url": "u",
+                "lms": "l",
+                "sequential": "s",
+                "units": [{"id": "u1", "title": "1. Setup", "pages": [1, 2]}],
+            }
+        )
+    )
+    paths.page_image("ps", 1).write_bytes(b"\x89PNG stub")
+    paths.page_text("ps", 1).write_text("a hint")
+    paths.config_file().write_text("deck: secret")
+    return paths
 
 
 def test_the_served_url_returns_the_page(pad, browser):
@@ -250,3 +279,114 @@ def test_an_unknown_viewer_is_refused(pad, browser):
         viewer.open_page(pad / "pad.html", viewer="chrome")
     assert browser == []
     assert not viewer.pidfile(pad).exists()
+
+
+# --- the home page and the problem reader ------------------------------------
+
+
+def test_the_root_is_the_home_page(pad):
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"]
+    status, headers, body = fetch_response(url.replace("pad.html", ""))
+
+    assert status == 200
+    assert "Current pad" in body.decode()
+    assert headers["Content-Type"] == "text/html; charset=utf-8"
+    # Built on every request, so a tab must reload to the current state.
+    assert headers["Cache-Control"] == "no-store"
+
+
+def test_index_html_is_the_home_page_too(pad):
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"]
+    assert "Current pad" in fetch(url.replace("pad.html", "index.html"))[1]
+
+
+def test_the_home_page_reads_the_state_root(pad):
+    """The server serves pad/; the page reads the directory above it, which
+    paths.py fixes as the root."""
+    (pad / "notes").mkdir()
+    (pad / "notes" / "clt.html").write_text("<title>The CLT</title>")
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"]
+
+    assert "The CLT" in fetch(url.replace("pad.html", ""))[1]
+
+
+def test_the_home_page_reflects_a_change_without_a_restart(pad):
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"].replace(
+        "pad.html", ""
+    )
+    assert "No kept notes." in fetch(url)[1]
+    (pad / "notes").mkdir()
+    (pad / "notes" / "clt.html").write_text("<title>The CLT</title>")
+    assert "The CLT" in fetch(url)[1]
+
+
+def test_a_problem_set_has_a_page(pad, problem_set):
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"]
+    status, headers, body = fetch_response(url.replace("pad.html", "problems/ps"))
+
+    assert status == 200
+    assert "1. Setup" in body.decode()
+    assert "/sources/ps/pages/page-001.png" in body.decode()
+    assert headers["Cache-Control"] == "no-store"
+
+
+def test_a_page_image_is_served_out_of_sources(pad, problem_set):
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"]
+    status, headers, body = fetch_response(
+        url.replace("pad.html", "sources/ps/pages/page-001.png")
+    )
+
+    assert (status, headers["Content-Type"], body) == (200, "image/png", b"\x89PNG stub")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "problems/nope",
+        "problems/..",
+        "problems/ps/",
+        "sources/ps/source.json",
+        "sources/ps/text/page-001.txt",
+        "sources/ps/pages/page-1.png",
+        "sources/ps/pages/page-002.png",
+        "sources/ps/pages/../source.json",
+        "sources/../config.yaml",
+        "sources/./config.yaml",
+        "../config.yaml",
+    ],
+)
+def test_everything_else_outside_the_pad_is_refused(pad, problem_set, path):
+    """One route reaches into sources/, for page images only. The manifest,
+    the text layer, the config, and anything reached through a dot segment
+    stay unreachable."""
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"].replace(
+        "pad.html", path
+    )
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        fetch(url)
+    assert excinfo.value.code == 404
+
+
+def test_the_health_check_does_not_count_as_use(pad):
+    """Liveness probes are the harness talking to itself; counting them would
+    keep an unread pad alive forever. A real page does count."""
+    from anki_wizard.pad_server import HEALTH_PATH, PadServer
+
+    server = PadServer(pad, port=0)
+    try:
+        server._last_request = time.monotonic() - 1000
+        base = f"http://{server.host}:{server.port}"
+
+        worker = threading.Thread(target=server.handle_request)
+        worker.start()
+        fetch(base + HEALTH_PATH)
+        worker.join(5)
+        assert server.idle_seconds > 900
+
+        worker = threading.Thread(target=server.handle_request)
+        worker.start()
+        fetch(base + "/")
+        worker.join(5)
+        assert server.idle_seconds < 60
+    finally:
+        server.server_close()
