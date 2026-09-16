@@ -431,10 +431,12 @@ range and there is nothing to guard against.
 Card only what `read_section` returned. Reaching into an adjacent page by hand
 duplicates cards across sections and strands coverage.
 
-## Problem sets from a course site
+## Problem sets and lecture pages from a course site
 
-`ingest_edx(url, slug)` captures an Open edX problem set the way
-`ingest_source` ingests a PDF; the README has the setup. What to know when
+`ingest_edx(url, slug)` captures an Open edX sequence the way `ingest_source`
+ingests a PDF; the README has the setup. A sequence is a problem set or a
+lecture page, and the tool does not distinguish them: a lecture page is its
+tabs of videos, notes, and the exercises between them. What to know when
 working one:
 
 - **A section is one tab**, and its pages are that tab's blocks in order:
@@ -445,15 +447,32 @@ working one:
   so a problem's image carries its statement and its solution together. A
   hint ending in "no solution was shown for this problem" means the site
   offered none; the back must then come from working it, and the card's why
-  should say so.
-- Cards from a set are worked problems: tag `worked-problem`, and file under
-  the unit's `Problems` deck split by subject, as described under lectures
-  and subdecks. Confirm the unit and the subject names with the user.
+  should say so. On a lecture page this is the common case: the site shows
+  answers only after an attempt, so every problem the user has not tried yet
+  arrives unsolved. A problem the user tried and got wrong is worth a card
+  more than one they got right.
+- **A lecture page's exercises file with the lecture, not with a set.** They
+  are worked problems for one lecture, so they go in that lecture's
+  `Problems` child (`...::L04 Parametric Estimation and Confidence
+  Intervals::Problems`), the same place a worked example from the slides
+  goes. The unit-level `Problems::<subject>` layout is for problem sets,
+  which span lectures.
+- **Skip what the slides already carded.** A lecture page repeats the
+  slides' definitions and worked examples in its setup text and easier
+  exercises. A card already pushed from the slide deck covers those;
+  `skip_section` with a reason naming the card rather than proposing a
+  duplicate that Anki will reject.
+- Cards from a problem set are worked problems: tag `worked-problem`, and
+  file under the unit's `Problems` deck split by subject, as described under
+  lectures and subdecks. Confirm the unit and the subject names with the user.
 - **The tool never signs in.** When it raises `LoginRequired`, hand the user
   the command it names and stop; the login is theirs to do in the window it
   opens. Do not retry, and do not look for another way in.
 - A tab recorded with a reason (the site answered 404, or it held only a
   video) is an empty section: `skip_section` it with that reason.
+- A collapsed "(Optional) ..." panel is captured collapsed. If its title
+  says it holds something worth a card, tell the user it was not captured
+  rather than carding the title.
 
 ## Card conventions
 

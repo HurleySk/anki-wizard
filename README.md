@@ -33,7 +33,7 @@ Optionally create `config.yaml`:
 | Tool | What it does |
 | --- | --- |
 | `ingest_source(pdf, slug, paths)` | Render pages, extract text, build a section map, start a cursor. Run once per document; safe to re-run after an interruption. |
-| `ingest_edx(url, slug, paths)` | Capture an Open edX problem set: one section per tab, one image per block, solutions revealed. Needs the `web` extra and a saved login; safe to re-run after an interruption. |
+| `ingest_edx(url, slug, paths)` | Capture an Open edX sequence, a problem set or a lecture page: one section per tab, one image per block, solutions revealed where offered. Needs the `web` extra and a saved login; safe to re-run after an interruption. |
 | `get_progress(slug, paths)` | What has been covered and what is next. |
 | `read_section(slug, section_id, paths)` | A section's page images and text. `section_id=None` reads the next uncovered section. |
 | `propose_cards(slug, proposals, section_id, paths)` | Add proposed cards to the ledger. Pass `section_id=None` with an uningested slug for cards not from a document. |
@@ -91,11 +91,13 @@ Any slug works. `conversation` is the conventional catch-all, but a narrower
 name gives those cards their own ledger and keeps them findable once there are
 hundreds. Such cards carry no section or pages and never advance a cursor.
 
-## Problem sets from a course site
+## Problem sets and lecture pages from a course site
 
-Problem sets on an Open edX site (MITx, edX) have no PDF. `ingest_edx` captures
-one straight from the site into the same layout `ingest_source` produces, so
-reading, proposing, and coverage work on it unchanged.
+Problem sets on an Open edX site (MITx, edX) have no PDF, and a lecture's own
+page holds exercises interleaved with its videos that no PDF has either.
+`ingest_edx` captures either straight from the site into the same layout
+`ingest_source` produces, so reading, proposing, and coverage work on it
+unchanged.
 
 Setup, once:
 
@@ -108,12 +110,21 @@ the session under `sources/.auth/` (gitignored) and closes. After that:
 
     s.ingest_edx("<any tab URL of the problem set>", slug="pset-3")
 
-Given any tab's URL it captures every tab of the set. A section is one tab and
-holds one image per block on it, setup text and problems alike, in page order;
-Show Answer is clicked wherever it is offered so the image carries the solution
-too. Video and discussion blocks are skipped. Each image has a text hint beside
-it with the formulas' TeX, which is as lossy as a PDF's text layer and read the
+Given any tab's URL it captures every tab of the sequence, whether that is a
+problem set or a lecture. A section is one tab and holds one image per block
+on it, setup text and problems alike, in page order; Show Answer is clicked
+wherever it is offered so the image carries the solution too. Video and
+discussion blocks are skipped, so a lecture tab that is only a video becomes an
+empty section, recorded with that reason. Each image has a text hint beside it
+with the formulas' TeX, which is as lossy as a PDF's text layer and read the
 same way: the image is the source.
+
+Two things the capture cannot do. The site offers Show Answer only once a
+problem has been attempted or its attempts are used up, so an unanswered
+problem is captured without its solution and its hint ends in "no solution
+was shown for this problem". And a collapsed block (an "(Optional) ..."
+panel behind a Show link) is captured collapsed; its contents are not in the
+image.
 
 `sources/<slug>/source.json` records the set's URL and each tab's page range.
 An interrupted run resumes at the first tab not recorded; a tab the site would
