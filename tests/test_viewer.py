@@ -367,6 +367,20 @@ def test_everything_else_outside_the_pad_is_refused(pad, problem_set, path):
     assert excinfo.value.code == 404
 
 
+def test_a_symlinked_page_image_is_refused(pad, problem_set):
+    """The route's guard is on the URL, and a well-named symlink passes it.
+    What is served must be contained by the pages directory itself, or the
+    one route that reaches outside the pad becomes a way to read the root."""
+    problem_set.page_image("ps", 9).symlink_to(problem_set.config_file())
+
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"].replace(
+        "pad.html", "sources/ps/pages/page-009.png"
+    )
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        fetch(url)
+    assert excinfo.value.code == 404
+
+
 def test_the_health_check_does_not_count_as_use(pad):
     """Liveness probes are the harness talking to itself; counting them would
     keep an unread pad alive forever. A real page does count."""

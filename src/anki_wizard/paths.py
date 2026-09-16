@@ -79,6 +79,24 @@ class Paths:
     def page_text(self, slug: str, page: int) -> Path:
         return self.text_dir(slug) / f"page-{page:03d}.txt"
 
+    def served_page_image(self, slug: str, page: int) -> Path | None:
+        """The page image only if it is genuinely inside the pages directory.
+
+        For the one server route that reaches outside the served pad. A name
+        this module built is not yet a file this module vouches for: a symlink
+        planted at pages/page-001.png carries a perfectly valid name and points
+        wherever it likes. Resolving both sides and checking containment is
+        what makes the route's promise true, and it belongs here because the
+        layout is what is being promised.
+        """
+        try:
+            resolved = self.page_image(slug, page).resolve(strict=True)
+            resolved.relative_to(self.pages_dir(slug).resolve(strict=True))
+        except (OSError, ValueError):
+            # ValueError is relative_to's way of saying "outside".
+            return None
+        return resolved
+
     def ensure_source_dirs(self, slug: str) -> None:
         self.pages_dir(slug).mkdir(parents=True, exist_ok=True)
         self.text_dir(slug).mkdir(parents=True, exist_ok=True)

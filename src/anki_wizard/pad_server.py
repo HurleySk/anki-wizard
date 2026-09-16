@@ -100,7 +100,11 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
             if not _is_slug(match["slug"]):
                 self.send_error(404, "no such page image")
                 return
-            self._send_png(paths.page_image(match["slug"], int(match["page"])))
+            image = paths.served_page_image(match["slug"], int(match["page"]))
+            if image is None:
+                self.send_error(404, "no such page image")
+                return
+            self._send_png(image)
             return
         super().do_GET()
 
