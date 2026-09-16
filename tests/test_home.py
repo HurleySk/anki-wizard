@@ -253,6 +253,16 @@ def test_covered_counts_only_sections_the_outline_has(workspace):
     assert (item["covered"], item["total"]) == (2, 2)
 
 
+def test_a_cursor_holding_the_wrong_type_is_reported_not_raised(workspace):
+    """A hand-edited cursor can be valid JSON of the wrong shape, which
+    constructs without complaint and only fails when it is read from."""
+    write_document(workspace, "doc", sections=2, covered=[1])
+    workspace.cursor_file("doc").write_text(json.dumps({"covered": 5}))
+    item = home.sources(workspace)["items"][0]
+    assert item["covered"] is None
+    assert "cursor.json" in item["problem"]
+
+
 def test_an_unreadable_sources_directory_is_reported_not_raised(workspace):
     workspace.sources_dir().write_text("a file, not a directory")
     listing = home.sources(workspace)

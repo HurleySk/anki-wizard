@@ -45,11 +45,19 @@ def load_cursor(path: Path) -> Cursor:
         return Cursor()
     try:
         data = json.loads(path.read_text())
-        return Cursor(**data)
+        cursor = Cursor(**data)
+        # The dataclass checks no types, so a hand-edited field of the wrong
+        # shape constructs and only fails wherever it is later read from.
+        # Check it here, where the file is still in hand to name.
+        if not isinstance(cursor.covered, list):
+            raise TypeError(f"covered is {type(cursor.covered).__name__}, not a list")
+        if not isinstance(cursor.skipped, dict):
+            raise TypeError(f"skipped is {type(cursor.skipped).__name__}, not a table")
     except (ValueError, TypeError) as exc:
         # These files are meant to be hand-inspectable, so they get hand-edited.
         # Name the file rather than surfacing a bare TypeError from this module.
         raise ValueError(f"{path} is not a readable cursor file: {exc}") from exc
+    return cursor
 
 
 def save_cursor(path: Path, cursor: Cursor) -> None:

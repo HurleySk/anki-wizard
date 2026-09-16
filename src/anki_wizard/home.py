@@ -146,12 +146,17 @@ def sources(paths: Paths) -> dict:
         try:
             outline = load_outline(paths.outline_file(slug))
             cursor = load_cursor(paths.cursor_file(slug))
-        except (OSError, ValueError) as exc:
+            # Read inside the try: both loaders validate on construction, so a
+            # hand-edited file of the wrong shape survives loading and fails
+            # only here, where a raise would take the whole page down.
+            total = len(outline.sections)
+            covered = sum(1 for s in outline.sections if s.id in cursor.covered)
+        except (OSError, ValueError, TypeError) as exc:
             # Both loaders name the file; a missing outline is the OSError.
             item["problem"] = str(exc)
         else:
-            item["total"] = len(outline.sections)
-            item["covered"] = sum(1 for s in outline.sections if s.id in cursor.covered)
+            item["total"] = total
+            item["covered"] = covered
         items.append(item)
     return {"items": items, "problem": problem}
 
