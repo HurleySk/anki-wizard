@@ -326,10 +326,14 @@ on the sheet is refused, naming the entry it repeats.
 The sheet is per course -- the configured `deck` -- not per slug, so it
 gathers from every document and conversation in the course. Its page is
 served at a stable URL under the pad server,
-`http://127.0.0.1:8899/cheatsheets/<course-slug>.html`, and is rebuilt on
-every approve, reject, or edit, so a tab left open is never behind the file.
-Print it from the browser for a copy on paper; the print layout is two
-columns and never splits a formula across a page.
+`http://127.0.0.1:8899/cheatsheets/<course-slug>.html`, and the pad server
+builds it from the YAML on every request, the way it builds the home page.
+So a tab left open is never behind the file, and the page can never carry a
+layout older than the running code. A copy is also written to
+`pad/cheatsheets/<course-slug>.html` on every approve, reject, or edit; that
+file is what `pad_viewer: browser` opens and what is there when no server is
+running. Print it from the browser for a copy on paper; the print layout is
+two columns and never splits a formula across a page.
 
 Rejecting an approved entry is how it leaves the sheet. Rows are never
 deleted, so the YAML keeps the history the way the card ledger does.
@@ -378,7 +382,7 @@ never accept does not strand its section: rejecting it settles the section.
       cursor.json     progress
     cards/<slug>.yaml the card ledger
     cheatsheets/<course-slug>.yaml       the cheat sheet, keyed on the deck
-    pad/cheatsheets/<course-slug>.html   its printable page, rebuilt on every change
+    pad/cheatsheets/<course-slug>.html   the offline copy; the URL is served from the YAML
 
 The ledger is the source of truth. Every card records where it came from and,
 once pushed, its Anki note id — which is what lets a card be revised later

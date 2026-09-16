@@ -355,8 +355,8 @@ the top, which is where a formula the whole course uses belongs.
 **Review on the pad.** `pad_formulas()` renders the proposals grouped by
 lecture with their ids; hand over the URL and stop. After the user's
 decisions, `cheatsheet()` rebuilds the printable page and returns its URL;
-hand that over too. The page is also rebuilt by every review and revision, so
-a tab the user has open is never behind the YAML.
+hand that over too. The server builds that page from the YAML when it is
+fetched, so a tab the user has open is never behind the sheet.
 
 **Duplicates.** The tool refuses an exact repeat of a formula already on the
 sheet, naming the entry. A near duplicate -- the same result in different
