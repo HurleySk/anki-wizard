@@ -327,3 +327,66 @@ def test_the_home_page_does_not_link_to_itself(workspace):
 
 def test_the_home_page_is_named_after_the_root(workspace):
     assert f"<h1>{workspace.root.name}</h1>" in home.home_page(workspace)
+
+
+# --- the problem reader ------------------------------------------------------
+
+
+def test_problems_page_shows_each_tab_in_order(workspace):
+    write_problem_set(
+        workspace,
+        "pset-1",
+        [
+            ("1. Setup", [1, 3], None),
+            ("2. Gone", [3, 3], "unit page answered 404"),
+            ("3. More", [3, 4], None),
+        ],
+    )
+    html = home.problems_page("pset-1", workspace)
+
+    assert html.index("1. Setup") < html.index("2. Gone") < html.index("3. More")
+    assert '<img src="/sources/pset-1/pages/page-001.png" alt="page 1">' in html
+    assert "page-002.png" in html
+    assert "page-003.png" in html
+    assert "page-004.png" not in html
+    assert "unit page answered 404" in html
+    assert 'class="reader"' in html
+    assert "<title>pset-1</title>" in html
+
+
+def test_problems_page_links_home(workspace):
+    write_problem_set(workspace, "pset-1", [("1. Setup", [1, 2], None)])
+    assert '<a href="/">' in home.problems_page("pset-1", workspace)
+
+
+def test_problems_page_for_an_unknown_slug_raises(workspace):
+    with pytest.raises(KeyError):
+        home.problems_page("nope", workspace)
+
+
+def test_a_document_is_not_a_problem_set(workspace):
+    write_document(workspace, "doc", sections=1, covered=[])
+    with pytest.raises(KeyError):
+        home.problems_page("doc", workspace)
+
+
+def test_an_unreadable_manifest_renders_the_reason(workspace):
+    workspace.ensure_source_dirs("bad")
+    workspace.source_manifest("bad").write_text("not json")
+    html = home.problems_page("bad", workspace)
+    assert "not a readable source manifest" in html
+    assert "<img" not in html
+
+
+def test_a_manifest_missing_its_units_renders_the_reason(workspace):
+    workspace.ensure_source_dirs("bad")
+    workspace.source_manifest("bad").write_text(json.dumps({"url": "u"}))
+    html = home.problems_page("bad", workspace)
+    assert "not a readable source manifest" in html
+
+
+def test_a_tab_title_is_escaped(workspace):
+    write_problem_set(workspace, "p", [("<script>x</script>", [1, 2], None)])
+    html = home.problems_page("p", workspace)
+    assert "<script>x</script>" not in html
+    assert "&lt;script&gt;" in html

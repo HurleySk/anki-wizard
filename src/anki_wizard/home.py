@@ -10,6 +10,7 @@ stands. The one exception is a problem page for a slug with no manifest,
 which is the 404 the server sends.
 """
 
+import json
 import re
 from datetime import datetime
 from html import escape, unescape
@@ -224,3 +225,40 @@ def _source_item(source: dict) -> str:
         return name + _meta(source["kind"]) + _problem(source["problem"])
     progress = f'{source["kind"]} · {source["covered"]} of {source["total"]} sections'
     return name + _meta(progress)
+
+
+def problems_page(slug: str, paths: Paths) -> str:
+    """A captured problem set: each tab as a section, each block image in order.
+
+    A reader, not a practice surface. Show Answer was clicked at capture, so
+    every image already carries its solution. The text hint beside each image
+    is left out: the image is the source. Raises KeyError for a slug with no
+    manifest, which is the one case that is a 404 rather than a page.
+    """
+    manifest_path = paths.source_manifest(slug)
+    if not manifest_path.exists():
+        raise KeyError(slug)
+
+    parts = [f"<h1>{escape(slug)}</h1>"]
+    try:
+        manifest = json.loads(manifest_path.read_text())
+        units = [
+            (str(u["title"]), int(u["pages"][0]), int(u["pages"][1]), u.get("reason"))
+            for u in manifest["units"]
+        ]
+    except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError) as exc:
+        # Hand-inspectable and so hand-edited, like the outline; the page
+        # says so in the same words existing_manifest would.
+        reason = f"{manifest_path} is not a readable source manifest: {exc}"
+        parts.append(f'<p class="problem">{escape(reason)}</p>')
+        return render_page("\n".join(parts), title=slug, body_class="reader")
+
+    for title, start, end, reason in units:
+        parts.append(f"<h2>{escape(title)}</h2>")
+        if reason:
+            # A tab the site would not serve, recorded rather than captured.
+            parts.append(f'<p class="muted">{escape(str(reason))}</p>')
+        for page in range(start, end):
+            src = f"/sources/{quote(slug)}/pages/page-{page:03d}.png"
+            parts.append(f'<img src="{src}" alt="page {page}">')
+    return render_page("\n".join(parts), title=slug, body_class="reader")
