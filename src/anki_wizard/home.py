@@ -20,9 +20,10 @@ from urllib.parse import quote
 import yaml
 
 from anki_wizard.cheatsheet import load_sheet
+from anki_wizard.config import load_config
 from anki_wizard.cursor import load_cursor
 from anki_wizard.outline import load_outline
-from anki_wizard.paths import Paths
+from anki_wizard.paths import Paths, deck_slug
 from anki_wizard.render import render_page
 
 # A kept note with an animation runs to a megabyte, and the title is in the
@@ -117,6 +118,32 @@ def cheat_sheets(paths: Paths) -> dict:
             item["approved"] = sum(1 for f in formulas if f.state == "approved")
         items.append(item)
     return {"items": items, "problem": problem}
+
+
+def configured_deck(paths: Paths) -> str | None:
+    """The deck this state directory is for, or None if it cannot be read.
+
+    A config that will not parse is a bad reason to lose the whole home
+    page, so it reads as "no deck" and each caller falls back.
+    """
+    try:
+        return load_config(paths.config_file()).deck
+    except (OSError, ValueError, yaml.YAMLError):
+        return None
+
+
+def sheet_title(slug: str, paths: Paths) -> str:
+    """The deck name a sheet's slug stands for, or the slug itself.
+
+    The name is Anki's, and the slug is lossy -- it cannot be turned back
+    into "Unit I: ..." or a deck whose name has a colon in it. So the name
+    comes from the config that produced the slug, and a slug from some other
+    course names itself.
+    """
+    deck = configured_deck(paths)
+    if deck is not None and deck_slug(deck) == slug:
+        return deck
+    return slug
 
 
 def sources(paths: Paths) -> dict:

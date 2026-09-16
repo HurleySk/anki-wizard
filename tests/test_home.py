@@ -191,6 +191,25 @@ def test_a_sheet_of_broken_yaml_is_listed_with_the_reason(workspace):
     assert item["problem"]
 
 
+def test_a_sheet_is_titled_from_the_configured_deck(workspace):
+    workspace.config_file().write_text("deck: Fundamentals of Statistics\n")
+    assert home.sheet_title("fundamentals-of-statistics", workspace) == (
+        "Fundamentals of Statistics"
+    )
+
+
+def test_a_sheet_that_is_not_the_configured_course_keeps_its_slug(workspace):
+    workspace.config_file().write_text("deck: Fundamentals of Statistics\n")
+    assert home.sheet_title("linear-algebra", workspace) == "linear-algebra"
+
+
+def test_a_sheet_title_falls_back_when_the_config_is_unreadable(workspace):
+    """A broken config must not take the home page down; the slug still names
+    the sheet."""
+    workspace.config_file().write_text("deck: [unclosed\n")
+    assert home.sheet_title("stats", workspace) == "stats"
+
+
 # --- sources -----------------------------------------------------------------
 
 
