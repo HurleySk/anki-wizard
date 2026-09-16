@@ -258,3 +258,72 @@ def test_an_unreadable_sources_directory_is_reported_not_raised(workspace):
     listing = home.sources(workspace)
     assert listing["items"] == []
     assert "sources" in listing["problem"]
+
+
+# --- the home page -----------------------------------------------------------
+
+
+def test_a_bare_root_renders_every_list_empty(workspace):
+    html = home.home_page(workspace)
+    for line in (
+        "No pad has been rendered.",
+        "No kept notes.",
+        "No cheat sheets.",
+        "No sources.",
+    ):
+        assert line in html
+
+
+def test_the_home_page_links_each_kind(workspace):
+    workspace.pad_dir().mkdir()
+    workspace.pad_file().write_text(render_html([], title="Scratch"))
+    write_note(workspace, "clt", title="The CLT")
+    write_sheet(
+        workspace,
+        "stats",
+        [Formula(id="f-0001", tex="x", label="One", state="approved")],
+        page_title="Fundamentals of Statistics",
+    )
+    write_document(workspace, "stats-ch1", sections=3, covered=[1, 2])
+    write_problem_set(workspace, "pset-1", [("1. Setup", [1, 3], None)])
+
+    html = home.home_page(workspace)
+
+    assert '<a href="pad.html">Scratch</a>' in html
+    assert '<a href="notes/clt.html">The CLT</a>' in html
+    assert '<a href="cheatsheets/stats.html">Fundamentals of Statistics</a>' in html
+    assert "1 formula</span>" in html
+    assert "document · 2 of 3 sections" in html
+    assert '<a href="/problems/pset-1">pset-1</a>' in html
+    assert "problem set · 0 of 1 sections" in html
+
+
+def test_the_home_page_orders_its_sections(workspace):
+    html = home.home_page(workspace)
+    positions = [
+        html.index(h) for h in ("Current pad", "Kept notes", "Cheat sheets", "Sources")
+    ]
+    assert positions == sorted(positions)
+
+
+def test_a_problem_shows_on_the_page(workspace):
+    write_document(workspace, "stats-ch1", sections=3, covered=[1])
+    workspace.cursor_file("stats-ch1").write_text("not json")
+    html = home.home_page(workspace)
+    assert 'class="problem"' in html
+    assert "cursor.json" in html
+
+
+def test_a_title_is_escaped_on_the_page(workspace):
+    write_note(workspace, "b", title="<b>bold</b>")
+    html = home.home_page(workspace)
+    assert "&lt;b&gt;bold&lt;/b&gt;" in html
+    assert "<b>bold</b>" not in html
+
+
+def test_the_home_page_does_not_link_to_itself(workspace):
+    assert '<a href="/">' not in home.home_page(workspace)
+
+
+def test_the_home_page_is_named_after_the_root(workspace):
+    assert f"<h1>{workspace.root.name}</h1>" in home.home_page(workspace)

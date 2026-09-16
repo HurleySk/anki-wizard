@@ -12,7 +12,7 @@ which is the 404 the server sends.
 
 import re
 from datetime import datetime
-from html import unescape
+from html import escape, unescape
 from pathlib import Path
 from urllib.parse import quote
 
@@ -22,6 +22,7 @@ from anki_wizard.cheatsheet import load_sheet
 from anki_wizard.cursor import load_cursor
 from anki_wizard.outline import load_outline
 from anki_wizard.paths import Paths
+from anki_wizard.render import render_page
 
 # A kept note with an animation runs to a megabyte, and the title is in the
 # head; reading the whole file to find it would make the home page as slow as
@@ -152,3 +153,74 @@ def sources(paths: Paths) -> dict:
             item["covered"] = sum(1 for s in outline.sections if s.id in cursor.covered)
         items.append(item)
     return {"items": items, "problem": problem}
+
+
+def home_page(paths: Paths) -> str:
+    """The front door: everything under the root worth reading, as links."""
+    parts = [f"<h1>{escape(paths.root.resolve().name)}</h1>", "<h2>Current pad</h2>"]
+    pad = current_pad(paths)
+    if pad is None:
+        parts.append('<p class="muted">No pad has been rendered.</p>')
+    else:
+        parts.append(
+            f'<p><a href="{pad["href"]}">{escape(pad["title"])}</a>'
+            f'{_meta("written " + pad["written"])}</p>'
+        )
+    parts.append(_section("Kept notes", kept_notes(paths), _note_item, "No kept notes."))
+    parts.append(
+        _section("Cheat sheets", cheat_sheets(paths), _sheet_item, "No cheat sheets.")
+    )
+    parts.append(_section("Sources", sources(paths), _source_item, "No sources."))
+    return render_page("\n".join(parts), title="Home", body_class="home", home_link=False)
+
+
+def _section(heading: str, listing: dict, render_item, empty: str) -> str:
+    parts = [f"<h2>{escape(heading)}</h2>"]
+    if listing["problem"]:
+        parts.append(f'<p class="problem">{escape(listing["problem"])}</p>')
+    if listing["items"]:
+        parts.append(
+            '<ul class="index">'
+            + "".join(f"<li>{render_item(item)}</li>" for item in listing["items"])
+            + "</ul>"
+        )
+    elif not listing["problem"]:
+        parts.append(f'<p class="muted">{escape(empty)}</p>')
+    return "\n".join(parts)
+
+
+def _meta(text: str) -> str:
+    return f' <span class="meta">{escape(text)}</span>'
+
+
+def _problem(text: str) -> str:
+    return f' <span class="problem">{escape(text)}</span>'
+
+
+def _note_item(note: dict) -> str:
+    return (
+        f'<a href="{note["href"]}">{escape(note["title"])}</a>'
+        f'{_meta("written " + note["written"])}'
+    )
+
+
+def _sheet_item(sheet: dict) -> str:
+    if sheet["href"]:
+        name = f'<a href="{sheet["href"]}">{escape(sheet["title"])}</a>'
+    else:
+        name = escape(sheet["title"]) + _meta("page not built")
+    if sheet["problem"]:
+        return name + _problem(sheet["problem"])
+    count = sheet["approved"]
+    return name + _meta(f"{count} formula" if count == 1 else f"{count} formulas")
+
+
+def _source_item(source: dict) -> str:
+    if source["href"]:
+        name = f'<a href="{source["href"]}">{escape(source["slug"])}</a>'
+    else:
+        name = escape(source["slug"])
+    if source["problem"]:
+        return name + _meta(source["kind"]) + _problem(source["problem"])
+    progress = f'{source["kind"]} · {source["covered"]} of {source["total"]} sections'
+    return name + _meta(progress)
