@@ -853,3 +853,22 @@ def test_check_prose_is_the_guard_the_renderer_uses():
         check_prose("n sigma^2")
     with pytest.raises(ValueError, match="plain text"):
         check_prose("a &mdash; b")
+
+
+def test_every_page_links_back_to_the_home_page():
+    """The link is what makes the home page a front door rather than a page
+    nobody finds."""
+    html = render_html([{"type": "prose", "text": "x"}])
+    assert '<nav class="home"><a href="/">Home</a></nav>' in html
+
+
+def test_render_page_wraps_markup_and_can_leave_the_home_link_off():
+    """The home page itself is built from markup, not blocks, and a link to
+    itself would be noise."""
+    from anki_wizard.render import render_page
+
+    html = render_page("<p>x</p>", title="Home", body_class="home", home_link=False)
+    assert "<p>x</p>" in html
+    assert "<title>Home</title>" in html
+    assert 'class="home"' in html
+    assert '<a href="/">' not in html

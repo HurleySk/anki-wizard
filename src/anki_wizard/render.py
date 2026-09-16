@@ -41,13 +41,15 @@ window.MathJax = {{
 <script id="MathJax-script" async src="{cdn}"></script>{scripts}
 <style>{css}</style>
 </head>
-<body{body_class}>
+<body{body_class}>{nav}
 <main>
 {body}
 </main>
 </body>
 </html>
 """
+
+_NAV = '\n<nav class="home"><a href="/">Home</a></nav>'
 
 _CSS = """
 :root {
@@ -122,24 +124,61 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 2.5rem 0; }
   .sheet h2 { break-after: avoid; margin-top: 1.2rem; }
   .sheet .formula { margin-bottom: 0.8rem; }
 }
+/* The link back to the home page, on every served page. */
+nav.home { max-width: 34rem; margin: 0 auto 1.5rem; font: 500 13px/1 ui-monospace, monospace; }
+nav.home a { color: var(--muted); text-decoration: none; }
+/* The home page and the problem reader are lists and images, not prose. */
+.home h1, .reader h1 { font-size: 1.4rem; margin: 0 0 1.5rem; }
+.home h2 { font-size: 1.1rem; margin: 2rem 0 0.8rem; }
+ul.index { list-style: none; padding: 0; margin: 0; }
+ul.index li { margin: 0 0 0.5rem; }
+.meta { color: var(--muted); font-size: 14px; }
+.muted { color: var(--muted); font-style: italic; }
+.problem { color: #b3261e; font-size: 14px; }
+/* Problem captures are full slide width; the prose measure would shrink
+   their type past reading. */
+.reader main, .reader nav.home { max-width: 52rem; }
+.reader img { display: block; width: 100%; height: auto; margin: 0 0 1rem; }
+@media print { nav.home { display: none; } }
 """
+
+
+def render_page(
+    body: str,
+    title: str = "Study pad",
+    body_class: str | None = None,
+    scripts: str = "",
+    home_link: bool = True,
+) -> str:
+    """Wrap markup in the shell every page shares.
+
+    `body` is markup the caller already built; render_html is the block-based
+    way in and the home page is the other. `body_class` scopes styling that
+    is not for every page: the cheat sheet sets "sheet" for its print layout,
+    which a derivation pad must not get. The home page passes
+    home_link=False, since a link to itself is noise.
+    """
+    return _PAGE.format(
+        title=escape(title),
+        cdn=MATHJAX_CDN,
+        scripts=scripts,
+        css=_CSS,
+        body_class=f' class="{escape(body_class)}"' if body_class else "",
+        nav=_NAV if home_link else "",
+        body=body,
+    )
 
 
 def render_html(
     blocks: list[dict], title: str = "Study pad", body_class: str | None = None
 ) -> str:
-    """Turn content blocks into a standalone page.
-
-    `body_class` scopes styling that is not for every page: the cheat sheet
-    sets "sheet" for its print layout, which a derivation pad must not get.
-    """
-    return _PAGE.format(
-        title=escape(title),
-        cdn=MATHJAX_CDN,
-        scripts=_scene_scripts(blocks),
-        css=_CSS,
-        body_class=f' class="{escape(body_class)}"' if body_class else "",
-        body="\n".join(_render_block(b) for b in blocks),
+    """Turn content blocks into a standalone page."""
+    scripts = _scene_scripts(blocks)
+    return render_page(
+        "\n".join(_render_block(b) for b in blocks),
+        title=title,
+        body_class=body_class,
+        scripts=scripts,
     )
 
 
