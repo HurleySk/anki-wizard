@@ -16,6 +16,11 @@ from html import unescape
 from pathlib import Path
 from urllib.parse import quote
 
+import yaml
+
+from anki_wizard.cheatsheet import load_sheet
+from anki_wizard.cursor import load_cursor
+from anki_wizard.outline import load_outline
 from anki_wizard.paths import Paths
 
 # A kept note with an animation runs to a megabyte, and the title is in the
@@ -79,4 +84,71 @@ def kept_notes(paths: Paths) -> dict:
         }
         for p in files
     ]
+    return {"items": items, "problem": problem}
+
+
+def cheat_sheets(paths: Paths) -> dict:
+    entries, problem = _listing(paths.cheatsheets_dir())
+    items = []
+    for path in entries:
+        if path.suffix != ".yaml" or not path.is_file():
+            continue
+        slug = path.stem
+        page = paths.cheatsheet_page(slug)
+        # The page is derived from the YAML on every review, so a sheet with
+        # nothing approved yet has no page; the YAML is still worth listing.
+        item = {
+            "slug": slug,
+            "title": page_title(page, slug) if page.exists() else slug,
+            "href": f"cheatsheets/{quote(page.name)}" if page.exists() else None,
+            "approved": None,
+            "problem": None,
+        }
+        try:
+            formulas = load_sheet(path)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            # load_sheet names the file and entry for a bad row; malformed
+            # YAML surfaces from the parser instead, and both belong on the
+            # page rather than in a traceback nobody sees.
+            item["problem"] = str(exc)
+        else:
+            item["approved"] = sum(1 for f in formulas if f.state == "approved")
+        items.append(item)
+    return {"items": items, "problem": problem}
+
+
+def sources(paths: Paths) -> dict:
+    entries, problem = _listing(paths.sources_dir())
+    items = []
+    for directory in entries:
+        # .auth is the course-site login session, not a source.
+        if not directory.is_dir() or directory.name.startswith("."):
+            continue
+        slug = directory.name
+        if paths.source_manifest(slug).exists():
+            kind = "problem set"
+        elif paths.source_pdf(slug).exists():
+            kind = "document"
+        else:
+            kind = "unknown"
+        item = {
+            "slug": slug,
+            "kind": kind,
+            # A document's page images are the agent's reading material, not
+            # the user's, so only a problem set gets a page here.
+            "href": f"/problems/{quote(slug)}" if kind == "problem set" else None,
+            "covered": None,
+            "total": None,
+            "problem": None,
+        }
+        try:
+            outline = load_outline(paths.outline_file(slug))
+            cursor = load_cursor(paths.cursor_file(slug))
+        except (OSError, ValueError) as exc:
+            # Both loaders name the file; a missing outline is the OSError.
+            item["problem"] = str(exc)
+        else:
+            item["total"] = len(outline.sections)
+            item["covered"] = sum(1 for s in outline.sections if s.id in cursor.covered)
+        items.append(item)
     return {"items": items, "problem": problem}

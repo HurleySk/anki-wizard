@@ -13,7 +13,7 @@ from anki_wizard import home
 from anki_wizard.cheatsheet import save_sheet
 from anki_wizard.cursor import save_cursor
 from anki_wizard.edx import outline_from_manifest
-from anki_wizard.models import Cursor, Outline, Section
+from anki_wizard.models import Cursor, Formula, Outline, Section
 from anki_wizard.outline import save_outline
 from anki_wizard.paths import Paths
 from anki_wizard.render import render_html
@@ -138,3 +138,123 @@ def test_an_unreadable_notes_directory_is_reported_not_raised(workspace):
     listing = home.kept_notes(workspace)
     assert listing["items"] == []
     assert "notes" in listing["problem"]
+
+
+# --- cheat sheets ------------------------------------------------------------
+
+
+def test_a_sheet_shows_its_approved_count_and_page(workspace):
+    write_sheet(
+        workspace,
+        "stats",
+        [
+            Formula(id="f-0001", tex="x", label="One", state="approved"),
+            Formula(id="f-0002", tex="y", label="Two", state="proposed"),
+            Formula(id="f-0003", tex="z", label="Three", state="rejected"),
+        ],
+        page_title="Fundamentals of Statistics",
+    )
+    assert home.cheat_sheets(workspace)["items"] == [
+        {
+            "slug": "stats",
+            "title": "Fundamentals of Statistics",
+            "href": "cheatsheets/stats.html",
+            "approved": 1,
+            "problem": None,
+        }
+    ]
+
+
+def test_a_sheet_without_a_page_is_listed_unlinked(workspace):
+    """The page is built on the first review; until then the YAML is the
+    only thing there, and a link to a missing page is worse than none."""
+    write_sheet(workspace, "stats", [])
+    item = home.cheat_sheets(workspace)["items"][0]
+    assert item["href"] is None
+    assert item["title"] == "stats"
+    assert item["approved"] == 0
+
+
+def test_a_broken_sheet_is_listed_with_the_reason(workspace):
+    workspace.cheatsheets_dir().mkdir()
+    workspace.cheatsheet_file("stats").write_text("- id: f-0001\n")
+    item = home.cheat_sheets(workspace)["items"][0]
+    assert item["approved"] is None
+    assert "entry 0" in item["problem"]
+
+
+def test_a_sheet_of_broken_yaml_is_listed_with_the_reason(workspace):
+    workspace.cheatsheets_dir().mkdir()
+    workspace.cheatsheet_file("stats").write_text("- [unclosed\n")
+    item = home.cheat_sheets(workspace)["items"][0]
+    assert item["approved"] is None
+    assert item["problem"]
+
+
+# --- sources -----------------------------------------------------------------
+
+
+def test_a_document_shows_its_progress_and_has_no_page(workspace):
+    write_document(workspace, "stats-ch1", sections=3, covered=[1, 2])
+    assert home.sources(workspace)["items"] == [
+        {
+            "slug": "stats-ch1",
+            "kind": "document",
+            "href": None,
+            "covered": 2,
+            "total": 3,
+            "problem": None,
+        }
+    ]
+
+
+def test_a_problem_set_links_to_its_reader(workspace):
+    write_problem_set(workspace, "pset-1", [("1. Setup", [1, 3], None)])
+    item = home.sources(workspace)["items"][0]
+    assert item["kind"] == "problem set"
+    assert item["href"] == "/problems/pset-1"
+    assert (item["covered"], item["total"]) == (0, 1)
+
+
+def test_sources_are_sorted_by_slug(workspace):
+    write_document(workspace, "b-doc", sections=1, covered=[])
+    write_document(workspace, "a-doc", sections=1, covered=[])
+    assert [s["slug"] for s in home.sources(workspace)["items"]] == ["a-doc", "b-doc"]
+
+
+def test_the_login_session_is_not_a_source(workspace):
+    auth = workspace.edx_auth_state()
+    auth.parent.mkdir(parents=True)
+    auth.write_text("{}")
+    assert home.sources(workspace)["items"] == []
+
+
+def test_a_source_with_nothing_recognisable_is_unknown(workspace):
+    workspace.source_dir("stray").mkdir(parents=True)
+    item = home.sources(workspace)["items"][0]
+    assert item["kind"] == "unknown"
+    assert "outline.json" in item["problem"]
+
+
+def test_a_broken_cursor_names_the_file(workspace):
+    write_document(workspace, "stats-ch1", sections=3, covered=[1])
+    workspace.cursor_file("stats-ch1").write_text("not json")
+    item = home.sources(workspace)["items"][0]
+    assert item["covered"] is None
+    assert "cursor.json" in item["problem"]
+
+
+def test_covered_counts_only_sections_the_outline_has(workspace):
+    """Cursors are hand-editable; a stale id must not push coverage past
+    the total."""
+    write_document(workspace, "doc", sections=2, covered=[1, 2])
+    save_cursor(workspace.cursor_file("doc"), Cursor(covered=["1", "2", "9"]))
+    item = home.sources(workspace)["items"][0]
+    assert (item["covered"], item["total"]) == (2, 2)
+
+
+def test_an_unreadable_sources_directory_is_reported_not_raised(workspace):
+    workspace.sources_dir().write_text("a file, not a directory")
+    listing = home.sources(workspace)
+    assert listing["items"] == []
+    assert "sources" in listing["problem"]
