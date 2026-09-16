@@ -157,6 +157,12 @@ The URL is stable across renders and outlives the process that produced it, so
 re-rendering does not invalidate a link already given. The server stops itself
 once the pad goes unread; `scripts/stop_pad.py` stops one early.
 
+`Session.home()` returns the URL of the home page, which lists the current
+pad, kept notes, cheat sheets, and sources with their progress, and links
+each captured problem set to a reader page. Hand it over when the user asks
+where something is, or what has been kept. The page lists and never
+reviews: card decisions still come through `review_cards`.
+
 **Hand over the link and stop.** The explanation belongs on the pad, not in the
 terminal beside it. Restating the content in chat wastes the reader's attention
 on the unreadable copy and answers the question twice; if something is worth

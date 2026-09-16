@@ -41,6 +41,7 @@ Optionally create `config.yaml`:
 | `skip_section(slug, section_id, reason, paths)` | Cover a section that yields no cards, recording why. |
 | `render_pad(blocks, paths, viewer)` | Render prose, math, derivations, and plots to a local HTML page, served for VS Code or opened in a browser. |
 | `promote_pad(name, paths)` | Keep the current pad as a named note. |
+| `open_home(paths, viewer)` | Start the pad server if needed and report the home page's URL: the pad, kept notes, cheat sheets, and sources, listed from disk. |
 | `push_to_anki(slug, client, deck, paths)` | Send approved cards to Anki, record note ids, advance the cursor. Cards carrying a lecture go to its subdeck. |
 | `revise_card(slug, card_id, client, paths, ...)` | Edit a card, updating Anki in place if it was already pushed. |
 | `search_collection(query, client, limit)` | Find notes anywhere in the collection, by Anki search syntax. |
@@ -71,6 +72,7 @@ Optionally create `config.yaml`:
     s.search('deck:"Intro to Probability" network')
     s.pad_note(1739985246842)              # the card, rendered, with its images
     s.pad_cards("lecture")                 # the slug's proposals, rendered for review
+    s.home()                               # the front door: everything above, listed
     s.edit_note(1739985246842, {"Answer": "..."})
     s.propose_formulas([...], lecture="Unit I: ...::L02 ...")
     s.pad_formulas()                       # proposed formulas, rendered for review
@@ -180,6 +182,37 @@ The pad is **ephemeral**: every render replaces it. When one is worth keeping:
 Or turn it into cards through the normal flow, which is `propose_cards` with a
 topic slug. The pad is a study surface, not a second deck: it does not preview
 cards or browse the ledger, because Anki and the terminal already do those.
+
+## The home page
+
+The pad, kept notes, cheat sheets, and captured problem sets each have a URL,
+and the home page is where they are all listed:
+
+    s.home()                                # -> http://127.0.0.1:8899/
+
+It is built by the pad server on every request from what is on disk, so it
+is never behind the files: the current pad with its title, kept notes newest
+first, one cheat sheet per course with its formula count, and every source
+with its progress. A captured problem set links to a reader page showing
+each tab's block images in order, solutions included as captured. A PDF
+source shows progress only; its page images are the agent's reading
+material.
+
+The page lists and never reviews. Approving and rejecting cards stays in
+the conversation.
+
+For a browser with no agent session open:
+
+    uv run python scripts/serve.py          # prints the URL
+
+The server is the same one that serves the pad, with the same idle timeout;
+browsing keeps it alive. It serves the pad directory and, out of `sources/`,
+page images only: the manifests, text layers, ledgers, config, and login
+session stay unreachable.
+
+Every served page carries a link back to the home page. Under
+`pad_viewer: browser`, which opens the file itself rather than serving it,
+that link goes nowhere; the served URL is what makes it work.
 
 ## The wider collection
 
