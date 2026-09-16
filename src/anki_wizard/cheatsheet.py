@@ -372,8 +372,13 @@ def _blocks_for(formulas: list[Formula], show_meta: bool) -> list[dict]:
     return blocks
 
 
-def _render_page(deck: str, formulas: list[Formula]) -> tuple[str, int]:
-    """The approved entries as the printable page, and how many there are."""
+def render_sheet_page(deck: str, formulas: list[Formula]) -> tuple[str, int]:
+    """The approved entries as the printable page, and how many there are.
+
+    Public because the pad server builds this page on request as well as
+    writing it: one renderer for both, so the served page and the stored
+    file cannot disagree about what the sheet says.
+    """
     approved = [f for f in formulas if f.state == "approved"]
     blocks = _blocks_for(approved, show_meta=False)
     html = render_html(blocks, title=deck.split("::")[0], body_class="sheet")
@@ -386,7 +391,7 @@ def _write_page(deck: str, formulas: list[Formula], paths: Paths) -> tuple[Path,
     Derived from the sheet and rebuilt on every change, so the URL a user has
     open in a tab is never behind the YAML.
     """
-    html, count = _render_page(deck, formulas)
+    html, count = render_sheet_page(deck, formulas)
     page = paths.cheatsheet_page(deck_slug(deck))
     write_text_atomic(page, html)
     return page, count
@@ -402,7 +407,7 @@ def _save_sheet_and_page(
     the sheet saved and the page behind it, with the caller told the review
     failed when half of it stuck.
     """
-    html, _ = _render_page(deck, formulas)
+    html, _ = render_sheet_page(deck, formulas)
     save_sheet(path, formulas)
     write_text_atomic(paths.cheatsheet_page(deck_slug(deck)), html)
 
