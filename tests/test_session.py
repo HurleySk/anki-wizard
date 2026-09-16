@@ -135,8 +135,8 @@ def test_session_ingest_edx_passes_paths_through(tmp_path, monkeypatch):
 
     seen = {}
 
-    def fake_ingest(url, slug, paths, headless=True):
-        seen.update(url=url, slug=slug, paths=paths, headless=headless)
+    def fake_ingest(url, slug, paths, headless=True, one_tab=False):
+        seen.update(url=url, slug=slug, paths=paths, headless=headless, one_tab=one_tab)
         return {"slug": slug}
 
     monkeypatch.setattr(edx, "ingest_edx", fake_ingest)
@@ -146,6 +146,9 @@ def test_session_ingest_edx_passes_paths_through(tmp_path, monkeypatch):
     assert seen["slug"] == "pset"
     assert seen["paths"] == s.paths
     assert seen["headless"] is True
+    assert seen["one_tab"] is False
+    s.ingest_edx(url, "pset", one_tab=True)
+    assert seen["one_tab"] is True
 
 
 def test_session_home_uses_the_configured_viewer(tmp_path):

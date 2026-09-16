@@ -198,6 +198,58 @@ def test_capture_set_resumes_after_an_interruption(context, workspace, monkeypat
     assert [s["pages"] for s in result["sections"]] == [[1, 5], [5, 9]]
 
 
+def test_capture_set_with_one_tab_captures_only_the_url_s_vertical(context, workspace):
+    units = [("ps1-tab1", "One"), ("ps1-tab2", "Two"), ("ps1-tab3", "Three")]
+    with FakeLms(units) as lms:
+        url = lms.course_url.replace("block@ps1-tab1", "block@ps1-tab2")
+        result = capture_set(context, url, "lec", workspace, one_tab=True)
+    assert [s["title"] for s in result["sections"]] == ["Two"]
+    assert [s["pages"] for s in result["sections"]] == [[1, 5]]
+
+
+def test_capture_set_with_one_tab_appends_the_next_tab_to_the_same_slug(context, workspace):
+    units = [("ps1-tab1", "One"), ("ps1-tab2", "Two"), ("ps1-tab3", "Three")]
+    with FakeLms(units) as lms:
+        second = lms.course_url.replace("block@ps1-tab1", "block@ps1-tab2")
+        capture_set(context, second, "lec", workspace, one_tab=True)
+        third = lms.course_url.replace("block@ps1-tab1", "block@ps1-tab3")
+        result = capture_set(context, third, "lec", workspace, one_tab=True)
+    # Capture order, not tab order: the manifest appends, and page numbers follow.
+    assert [s["title"] for s in result["sections"]] == ["Two", "Three"]
+    assert [s["pages"] for s in result["sections"]] == [[1, 5], [5, 9]]
+
+
+def test_capture_set_with_one_tab_is_idempotent_on_a_tab_already_held(context, workspace):
+    with FakeLms([("ps1-tab1", "One"), ("ps1-tab2", "Two")]) as lms:
+        url = lms.course_url.replace("block@ps1-tab1", "block@ps1-tab2")
+        capture_set(context, url, "lec", workspace, one_tab=True)
+        result = capture_set(context, url, "lec", workspace, one_tab=True)
+    assert [s["title"] for s in result["sections"]] == ["Two"]
+
+
+def test_capture_set_with_one_tab_refuses_a_url_with_no_vertical(context, workspace):
+    with FakeLms([("ps1-tab1", "One")]) as lms:
+        bare = lms.course_url.rsplit("/", 1)[0]
+        with pytest.raises(ValueError, match="names none"):
+            capture_set(context, bare, "lec", workspace, one_tab=True)
+    assert not workspace.source_manifest("lec").exists()
+
+
+def test_capture_set_with_one_tab_refuses_a_vertical_not_in_the_sequence(context, workspace):
+    with FakeLms([("ps1-tab1", "One")]) as lms:
+        url = lms.course_url.replace("block@ps1-tab1", "block@ps1-tab9")
+        with pytest.raises(ValueError, match="ps1-tab9"):
+            capture_set(context, url, "lec", workspace, one_tab=True)
+    assert not workspace.source_manifest("lec").exists()
+
+
+def test_capture_set_still_captures_every_tab_by_default(context, workspace):
+    units = [("ps1-tab1", "One"), ("ps1-tab2", "Two"), ("ps1-tab3", "Three")]
+    with FakeLms(units) as lms:
+        result = capture_set(context, lms.course_url, "pset", workspace)
+    assert [s["title"] for s in result["sections"]] == ["One", "Two", "Three"]
+
+
 def test_capture_set_refuses_a_second_set_on_a_slug(context, workspace):
     with FakeLms([("ps1-tab1", "One")]) as lms:
         capture_set(context, lms.course_url, "pset", workspace)

@@ -22,8 +22,8 @@ class Session:
     def ingest(self, pdf: Path, slug: str, dpi: int = 150) -> dict:
         return tools.ingest_source(pdf, slug=slug, paths=self.paths, dpi=dpi)
 
-    def ingest_edx(self, url: str, slug: str) -> dict:
-        return edx.ingest_edx(url, slug=slug, paths=self.paths)
+    def ingest_edx(self, url: str, slug: str, one_tab: bool = False) -> dict:
+        return edx.ingest_edx(url, slug=slug, paths=self.paths, one_tab=one_tab)
 
     def progress(self, slug: str) -> dict:
         return tools.get_progress(slug, paths=self.paths)

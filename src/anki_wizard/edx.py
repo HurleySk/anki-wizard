@@ -32,7 +32,8 @@ def parse_course_url(url: str) -> tuple[str, str]:
 
     The learning frontend and the LMS share an origin on the sites this is
     for, so the origin is the API base too. The vertical segment, when
-    present, is ignored: one run captures the whole sequential.
+    present, is ignored here; `parse_vertical` reads it for the callers that
+    capture a single tab.
     """
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.netloc:
@@ -44,6 +45,34 @@ def parse_course_url(url: str) -> tuple[str, str]:
         f"no problem set in {url!r}: expected a path segment like "
         "block-v1:<org>+<course>+<run>+type@sequential+block@<name>"
     )
+
+
+def parse_vertical(url: str) -> str | None:
+    """The vertical block id a course URL names, or None when it names none.
+
+    A sequential is a problem set or a lecture page and the site does not
+    distinguish them, so nothing here infers which it is: the tab is read
+    only because a caller asked for one tab.
+    """
+    for segment in urlsplit(url).path.split("/"):
+        if "type@vertical" in segment:
+            return segment
+    return None
+
+
+def required_vertical(url: str) -> str:
+    """The vertical a URL names, refused when it names none.
+
+    Its own function because both the early refusal in `ingest_edx` and the
+    selection in `capture_set` make the same demand of the same URL.
+    """
+    vertical = parse_vertical(url)
+    if vertical is None:
+        raise ValueError(
+            f"one tab was asked for, but {url!r} names none: "
+            "expected a block-v1:...+type@vertical+block@<name> segment"
+        )
+    return vertical
 
 
 def sequence_url(lms: str, sequential: str) -> str:
@@ -329,19 +358,37 @@ def _result(slug: str, outline: Outline) -> dict:
     }
 
 
-def capture_set(context, url: str, slug: str, paths) -> dict:
-    """Capture every tab of the set at `url` into `sources/<slug>/`.
+def selected_units(units: list[dict], url: str, one_tab: bool) -> list[dict]:
+    """The tabs to capture: the one the URL names, or all of them.
+
+    A vertical that the sequence does not list is a typo in the pasted URL.
+    Refused by name rather than captured as an empty set, which would write a
+    section with no pages and read as a tab that held nothing.
+    """
+    if not one_tab:
+        return units
+    vertical = required_vertical(url)
+    chosen = [unit for unit in units if unit["id"] == vertical]
+    if not chosen:
+        listed = ", ".join(unit["id"] for unit in units) or "no tabs"
+        raise ValueError(f"{vertical} is not a tab of this sequence, which lists {listed}")
+    return chosen
+
+
+def capture_set(context, url: str, slug: str, paths, one_tab: bool = False) -> dict:
+    """Capture the set at `url` into `sources/<slug>/`, every tab or just one.
 
     Tabs already in the manifest are skipped, so a run interrupted partway
-    resumes at the first tab not yet recorded. After each tab the manifest
-    and outline are rewritten, so a crash leaves a consistent source.
+    resumes at the first tab not yet recorded, and a second `one_tab` run on
+    the same slug appends the tab it names. After each tab the manifest and
+    outline are rewritten, so a crash leaves a consistent source.
     """
     lms, sequential = parse_course_url(url)
     manifest_path = paths.source_manifest(slug)
     manifest = existing_manifest(manifest_path, sequential)
 
     page = context.new_page()
-    units = fetch_units(page, lms, sequential)
+    units = selected_units(fetch_units(page, lms, sequential), url, one_tab)
 
     if manifest is None:
         manifest = new_manifest(url, lms, sequential)
@@ -395,15 +442,25 @@ def _playwright():
     return sync_playwright, Error
 
 
-def ingest_edx(url: str, slug: str, paths, headless: bool = True) -> dict:
-    """Capture the problem set at `url` into `sources/<slug>/`.
+def ingest_edx(url: str, slug: str, paths, headless: bool = True, one_tab: bool = False) -> dict:
+    """Capture the sequence at `url` into `sources/<slug>/`.
+
+    Captures every tab by default, which is what a problem set wants. With
+    `one_tab`, captures only the vertical the URL names and appends it to the
+    slug, which is what a lecture page wants: its tabs are worth carding one
+    at a time, and they share a slug so one lecture's cards group together.
 
     Everything that can be refused is refused before the browser starts: a
-    URL that names no problem set, a slug holding a different set, a missing
-    session. The browser itself opens headless on the saved session; the
-    headed login is `scripts/edx_login.py`, run by the user, never here.
+    URL that names no problem set, a URL naming no tab when one was asked
+    for, a slug holding a different set, a missing session. The browser
+    itself opens headless on the saved session; the headed login is
+    `scripts/edx_login.py`, run by the user, never here. Whether the named
+    tab is one this sequence lists needs the tab list, so that is checked
+    once the browser has it.
     """
     _, sequential = parse_course_url(url)
+    if one_tab:
+        required_vertical(url)
     existing_manifest(paths.source_manifest(slug), sequential)
     state = paths.edx_auth_state()
     if not state.exists():
@@ -421,7 +478,7 @@ def ingest_edx(url: str, slug: str, paths, headless: bool = True) -> dict:
             context = browser.new_context(
                 storage_state=str(state), viewport=VIEWPORT, device_scale_factor=2
             )
-            return capture_set(context, url, slug, paths)
+            return capture_set(context, url, slug, paths, one_tab=one_tab)
         finally:
             browser.close()
 

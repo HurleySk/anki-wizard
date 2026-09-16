@@ -36,6 +36,13 @@ def test_ingest_edx_refuses_a_second_set_on_a_slug(workspace):
         ingest_edx(COURSE_URL, "pset", workspace)
 
 
+def test_ingest_edx_refuses_one_tab_on_a_url_naming_no_tab(workspace):
+    bare = f"{LMS}/learn/course/course-v1:T+X+1/{SEQUENTIAL}"
+    with pytest.raises(ValueError, match="names none"):
+        ingest_edx(bare, "lec", workspace, one_tab=True)
+    assert not workspace.source_dir("lec").exists()
+
+
 def test_ingest_edx_requires_a_saved_session(workspace):
     with pytest.raises(LoginRequired, match=r"edx_login\.py"):
         ingest_edx(COURSE_URL, "pset", workspace)

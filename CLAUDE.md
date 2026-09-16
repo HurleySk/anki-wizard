@@ -435,9 +435,12 @@ duplicates cards across sections and strands coverage.
 
 `ingest_edx(url, slug)` captures an Open edX sequence the way `ingest_source`
 ingests a PDF; the README has the setup. A sequence is a problem set or a
-lecture page, and the tool does not distinguish them: a lecture page is its
-tabs of videos, notes, and the exercises between them. What to know when
-working one:
+lecture page, and nothing in the URL says which -- so the tool does not guess,
+and the caller says how much to take. The default captures every tab, which is
+what a problem set wants. `one_tab=True` captures only the tab the URL names
+and appends it to the slug, which is what a lecture page wants: its tabs are
+videos, notes, and exercises worth carding one at a time. Use the same slug for
+each tab of one lecture. What to know when working one:
 
 - **A section is one tab**, and its pages are that tab's blocks in order:
   setup text first, then the problems that use it. Read the whole section

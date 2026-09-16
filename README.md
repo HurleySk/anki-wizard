@@ -33,7 +33,7 @@ Optionally create `config.yaml`:
 | Tool | What it does |
 | --- | --- |
 | `ingest_source(pdf, slug, paths)` | Render pages, extract text, build a section map, start a cursor. Run once per document; safe to re-run after an interruption. |
-| `ingest_edx(url, slug, paths)` | Capture an Open edX sequence, a problem set or a lecture page: one section per tab, one image per block, solutions revealed where offered. Needs the `web` extra and a saved login; safe to re-run after an interruption. |
+| `ingest_edx(url, slug, paths)` | Capture an Open edX sequence, a problem set or a lecture page: one section per tab, one image per block, solutions revealed where offered. `one_tab=True` captures only the tab the URL names, appending it to the slug. Needs the `web` extra and a saved login; safe to re-run after an interruption. |
 | `get_progress(slug, paths)` | What has been covered and what is next. |
 | `read_section(slug, section_id, paths)` | A section's page images and text. `section_id=None` reads the next uncovered section. |
 | `propose_cards(slug, proposals, section_id, paths)` | Add proposed cards to the ledger. Pass `section_id=None` with an uningested slug for cards not from a document. |
@@ -110,8 +110,21 @@ the session under `sources/.auth/` (gitignored) and closes. After that:
 
     s.ingest_edx("<any tab URL of the problem set>", slug="pset-3")
 
-Given any tab's URL it captures every tab of the sequence, whether that is a
-problem set or a lecture. A section is one tab and holds one image per block
+Given any tab's URL it captures every tab of the sequence, which is what a
+problem set wants: the whole set under one slug.
+
+    s.ingest_edx("<that tab's URL>", slug="l05-parainference", one_tab=True)
+
+`one_tab=True` captures only the tab the URL names. A lecture page wants this:
+its tabs are videos, notes, and exercises worth carding one at a time rather
+than in one sweep. Re-run it with another tab's URL and the same slug to append
+that tab, so a lecture's tabs share a slug however many sittings they take.
+Tabs already captured are skipped, so a repeat is a no-op, and sections are
+numbered in capture order rather than tab order. Nothing infers which kind of
+sequence a URL names -- the site does not distinguish them -- so the choice is
+the caller's, and the default captures everything.
+
+A section is one tab and holds one image per block
 on it, setup text and problems alike, in page order; Show Answer is clicked
 wherever it is offered so the image carries the solution too. Video and
 discussion blocks are skipped, so a lecture tab that is only a video becomes an

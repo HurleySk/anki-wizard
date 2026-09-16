@@ -7,6 +7,7 @@ from anki_wizard.edx import (
     new_manifest,
     outline_from_manifest,
     parse_course_url,
+    parse_vertical,
     save_manifest,
     sequence_url,
     unit_url,
@@ -28,6 +29,16 @@ def test_parse_course_url_returns_lms_origin_and_sequential():
 def test_parse_course_url_accepts_a_sequential_without_a_vertical():
     url = URL.rsplit("/", 1)[0]
     assert parse_course_url(url) == ("https://courses.learn.mit.edu", SEQUENTIAL)
+
+
+def test_parse_vertical_returns_the_tab_named_by_the_url():
+    assert parse_vertical(URL) == (
+        "block-v1:MITxT+18.6501x+3T2026+type@vertical+block@prob_linalg_diag-tab1"
+    )
+
+
+def test_parse_vertical_is_none_for_a_bare_sequential():
+    assert parse_vertical(URL.rsplit("/", 1)[0]) is None
 
 
 def test_parse_course_url_refuses_a_url_without_a_sequential():
