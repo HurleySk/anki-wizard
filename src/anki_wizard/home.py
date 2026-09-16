@@ -97,13 +97,12 @@ def cheat_sheets(paths: Paths) -> dict:
         if path.suffix != ".yaml" or not path.is_file():
             continue
         slug = path.stem
-        page = paths.cheatsheet_page(slug)
-        # The page is derived from the YAML on every review, so a sheet with
-        # nothing approved yet has no page; the YAML is still worth listing.
+        # The page is built on request from this YAML, so every sheet has
+        # one; there is no "not built yet" state to represent.
         item = {
             "slug": slug,
-            "title": page_title(page, slug) if page.exists() else slug,
-            "href": f"cheatsheets/{quote(page.name)}" if page.exists() else None,
+            "title": sheet_title(slug, paths),
+            "href": f"cheatsheets/{quote(slug)}.html",
             "approved": None,
             "problem": None,
         }
@@ -238,10 +237,7 @@ def _note_item(note: dict) -> str:
 
 
 def _sheet_item(sheet: dict) -> str:
-    if sheet["href"]:
-        name = f'<a href="{sheet["href"]}">{escape(sheet["title"])}</a>'
-    else:
-        name = escape(sheet["title"]) + _meta("page not built")
+    name = f'<a href="{sheet["href"]}">{escape(sheet["title"])}</a>'
     if sheet["problem"]:
         return name + _problem(sheet["problem"])
     count = sheet["approved"]

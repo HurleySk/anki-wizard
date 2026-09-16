@@ -73,12 +73,8 @@ def write_problem_set(paths, slug, units):
     save_cursor(paths.cursor_file(slug), Cursor())
 
 
-def write_sheet(paths, slug, formulas, page_title=None):
+def write_sheet(paths, slug, formulas):
     save_sheet(paths.cheatsheet_file(slug), formulas)
-    if page_title is not None:
-        page = paths.cheatsheet_page(slug)
-        page.parent.mkdir(parents=True, exist_ok=True)
-        page.write_text(render_html([], title=page_title, body_class="sheet"))
 
 
 # --- the current pad ---------------------------------------------------------
@@ -144,33 +140,33 @@ def test_an_unreadable_notes_directory_is_reported_not_raised(workspace):
 
 
 def test_a_sheet_shows_its_approved_count_and_page(workspace):
+    workspace.config_file().write_text("deck: Fundamentals of Statistics\n")
     write_sheet(
         workspace,
-        "stats",
+        "fundamentals-of-statistics",
         [
             Formula(id="f-0001", tex="x", label="One", state="approved"),
             Formula(id="f-0002", tex="y", label="Two", state="proposed"),
             Formula(id="f-0003", tex="z", label="Three", state="rejected"),
         ],
-        page_title="Fundamentals of Statistics",
     )
     assert home.cheat_sheets(workspace)["items"] == [
         {
-            "slug": "stats",
+            "slug": "fundamentals-of-statistics",
             "title": "Fundamentals of Statistics",
-            "href": "cheatsheets/stats.html",
+            "href": "cheatsheets/fundamentals-of-statistics.html",
             "approved": 1,
             "problem": None,
         }
     ]
 
 
-def test_a_sheet_without_a_page_is_listed_unlinked(workspace):
-    """The page is built on the first review; until then the YAML is the
-    only thing there, and a link to a missing page is worse than none."""
+def test_a_sheet_with_nothing_approved_is_still_linked(workspace):
+    """The page is built on request from the YAML, so every sheet has one --
+    an empty sheet renders as an empty page, which is honest."""
     write_sheet(workspace, "stats", [])
     item = home.cheat_sheets(workspace)["items"][0]
-    assert item["href"] is None
+    assert item["href"] == "cheatsheets/stats.html"
     assert item["title"] == "stats"
     assert item["approved"] == 0
 
@@ -307,11 +303,11 @@ def test_the_home_page_links_each_kind(workspace):
     workspace.pad_dir().mkdir()
     workspace.pad_file().write_text(render_html([], title="Scratch"))
     write_note(workspace, "clt", title="The CLT")
+    workspace.config_file().write_text("deck: Fundamentals of Statistics\n")
     write_sheet(
         workspace,
-        "stats",
+        "fundamentals-of-statistics",
         [Formula(id="f-0001", tex="x", label="One", state="approved")],
-        page_title="Fundamentals of Statistics",
     )
     write_document(workspace, "stats-ch1", sections=3, covered=[1, 2])
     write_problem_set(workspace, "pset-1", [("1. Setup", [1, 3], None)])
@@ -320,7 +316,10 @@ def test_the_home_page_links_each_kind(workspace):
 
     assert '<a href="pad.html">Scratch</a>' in html
     assert '<a href="notes/clt.html">The CLT</a>' in html
-    assert '<a href="cheatsheets/stats.html">Fundamentals of Statistics</a>' in html
+    assert (
+        '<a href="cheatsheets/fundamentals-of-statistics.html">'
+        "Fundamentals of Statistics</a>"
+    ) in html
     assert "1 formula</span>" in html
     assert "document · 2 of 3 sections" in html
     assert '<a href="/problems/pset-1">pset-1</a>' in html
