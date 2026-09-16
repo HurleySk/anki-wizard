@@ -119,18 +119,18 @@ def test_kept_notes_are_reachable(pad):
 
 
 def test_a_page_below_the_root_is_served_by_the_one_server(pad):
-    """A cheat sheet lives in a subdirectory of the pad but must not get its
+    """A kept note lives in a subdirectory of the pad but must not get its
     own server: one process per directory would stack up, and the URL host
     and port would differ from the pad's."""
-    (pad / "cheatsheets").mkdir()
-    sheet = pad / "cheatsheets" / "stats.html"
-    sheet.write_text("<p>sheet</p>")
+    (pad / "notes").mkdir()
+    note = pad / "notes" / "clt.html"
+    note.write_text("<p>note</p>")
     pad_url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"]
-    result = viewer.open_page(sheet, viewer="vscode", root=pad)
+    result = viewer.open_page(note, viewer="vscode", root=pad)
 
-    assert result["url"] == pad_url.replace("pad.html", "cheatsheets/stats.html")
-    assert fetch(result["url"]) == (200, "<p>sheet</p>")
-    assert viewer.running_server(pad / "cheatsheets") is None
+    assert result["url"] == pad_url.replace("pad.html", "notes/clt.html")
+    assert fetch(result["url"]) == (200, "<p>note</p>")
+    assert viewer.running_server(pad / "notes") is None
 
 
 def test_a_page_outside_the_root_is_refused(pad, tmp_path):
@@ -328,6 +328,86 @@ def test_a_problem_set_has_a_page(pad, problem_set):
     assert "1. Setup" in body.decode()
     assert "/sources/ps/pages/page-001.png" in body.decode()
     assert headers["Cache-Control"] == "no-store"
+
+
+@pytest.fixture
+def sheet(pad):
+    """A cheat sheet under the state root, for the configured course."""
+    paths = Paths(root=pad.parent)
+    paths.config_file().write_text("deck: Fundamentals of Statistics\n")
+    paths.cheatsheets_dir().mkdir()
+    paths.cheatsheet_file("fundamentals-of-statistics").write_text(
+        "- id: f-0001\n"
+        "  tex: E[X] = p\n"
+        "  label: Bernoulli mean\n"
+        "  state: approved\n"
+    )
+    return paths
+
+
+def test_a_cheat_sheet_is_built_on_request(pad, sheet):
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"]
+    status, headers, body = fetch_response(
+        url.replace("pad.html", "cheatsheets/fundamentals-of-statistics.html")
+    )
+
+    assert status == 200
+    assert "Bernoulli mean" in body.decode()
+    assert headers["Content-Type"] == "text/html; charset=utf-8"
+    assert headers["Cache-Control"] == "no-store"
+
+
+def test_the_served_sheet_beats_a_stale_stored_one(pad, sheet):
+    """The reason this route exists: a file written by an older shell must
+    not be what the link opens."""
+    stored = sheet.cheatsheet_page("fundamentals-of-statistics")
+    stored.parent.mkdir(parents=True, exist_ok=True)
+    stored.write_text("<p>an older shell</p>")
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"]
+
+    body = fetch(
+        url.replace("pad.html", "cheatsheets/fundamentals-of-statistics.html")
+    )[1]
+    assert "an older shell" not in body
+    assert '<nav class="home"><a href="/">Home</a></nav>' in body
+
+
+def test_a_sheet_reflects_a_change_without_a_restart(pad, sheet):
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"].replace(
+        "pad.html", "cheatsheets/fundamentals-of-statistics.html"
+    )
+    assert "Bernoulli mean" in fetch(url)[1]
+    sheet.cheatsheet_file("fundamentals-of-statistics").write_text(
+        "- id: f-0001\n  tex: x\n  label: Renamed\n  state: approved\n"
+    )
+    assert "Renamed" in fetch(url)[1]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "cheatsheets/linear-algebra.html",
+        "cheatsheets/nope.html",
+        "cheatsheets/...html",
+    ],
+)
+def test_a_sheet_that_is_not_the_course_is_refused(pad, sheet, path):
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"].replace(
+        "pad.html", path
+    )
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        fetch(url)
+    assert excinfo.value.code == 404
+
+
+def test_a_broken_sheet_is_a_404_not_a_crash(pad, sheet):
+    sheet.cheatsheet_file("fundamentals-of-statistics").write_text("- [unclosed\n")
+    url = viewer.open_page(pad / "pad.html", viewer="vscode")["url"].replace(
+        "pad.html", "cheatsheets/fundamentals-of-statistics.html"
+    )
+    with pytest.raises(urllib.error.HTTPError) as excinfo:
+        fetch(url)
+    assert excinfo.value.code == 404
 
 
 def test_a_page_image_is_served_out_of_sources(pad, problem_set):

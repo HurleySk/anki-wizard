@@ -39,9 +39,10 @@ STOP_POLL_SECONDS = 0.5
 # cannot tell a live pad server from a recycled pid.
 HEALTH_PATH = "/.anki-wizard-pad"
 
-# The two routes built on request. A slug is one path segment; a dot segment
+# The routes built on request. A slug is one path segment; a dot segment
 # is refused by _is_slug before any path is built from it.
 _PROBLEMS = re.compile(r"/problems/(?P<slug>[A-Za-z0-9._-]+)")
+_CHEATSHEET = re.compile(r"/cheatsheets/(?P<slug>[A-Za-z0-9._-]+)\.html")
 _PAGE_IMAGE = re.compile(
     r"/sources/(?P<slug>[A-Za-z0-9._-]+)/pages/page-(?P<page>\d{3})\.png"
 )
@@ -93,6 +94,19 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
                 html = _pages().problems_page(match["slug"], paths)
             except KeyError:
                 self.send_error(404, "no such problem set")
+                return
+            self._send_html(html)
+            return
+        if match := _CHEATSHEET.fullmatch(path):
+            if not _is_slug(match["slug"]):
+                self.send_error(404, "no such cheat sheet")
+                return
+            try:
+                html = _pages().sheet_page(match["slug"], paths)
+            except (KeyError, ValueError):
+                # Built here rather than served from the file the reviews
+                # write, so the page cannot lag the shell it is rendered in.
+                self.send_error(404, "no such cheat sheet")
                 return
             self._send_html(html)
             return
