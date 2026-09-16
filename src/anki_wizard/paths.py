@@ -13,8 +13,13 @@ from pathlib import Path
 class Paths:
     root: Path
 
+    def sources_dir(self) -> Path:
+        # For listing: everything the harness has ingested. The login session
+        # sits under it too, as a dotfile, which callers that list skip.
+        return self.root / "sources"
+
     def source_dir(self, slug: str) -> Path:
-        return self.root / "sources" / slug
+        return self.sources_dir() / slug
 
     def pages_dir(self, slug: str) -> Path:
         return self.source_dir(slug) / "pages"
@@ -39,7 +44,7 @@ class Paths:
     def edx_auth_state(self) -> Path:
         # Under sources/ so the existing gitignore covers it. It is a login
         # session, not user state to keep, and must never be committed.
-        return self.root / "sources" / ".auth" / "edx.json"
+        return self.sources_dir() / ".auth" / "edx.json"
 
     def ledger_file(self, slug: str) -> Path:
         # Document slugs and deck slugs share this one flat namespace, and both
@@ -51,11 +56,14 @@ class Paths:
         # output, the other a name the user typed for their own ingest.
         return self.root / "cards" / f"{slug}.yaml"
 
+    def cheatsheets_dir(self) -> Path:
+        return self.root / "cheatsheets"
+
     def cheatsheet_file(self, course_slug: str) -> Path:
         # Keyed on the course rather than a source: one sheet gathers formulas
         # from every document and conversation in a course. The slug comes
         # from deck_slug, so its charset already keeps it inside cheatsheets/.
-        return self.root / "cheatsheets" / f"{course_slug}.yaml"
+        return self.cheatsheets_dir() / f"{course_slug}.yaml"
 
     def cheatsheet_page(self, course_slug: str) -> Path:
         # Under pad/ so the pad server, rooted there, serves it at a stable URL

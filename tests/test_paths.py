@@ -100,3 +100,11 @@ def test_source_manifest_sits_beside_the_outline(tmp_path):
 def test_edx_auth_state_lives_under_sources(tmp_path):
     p = Paths(root=tmp_path)
     assert p.edx_auth_state() == tmp_path / "sources" / ".auth" / "edx.json"
+
+
+def test_the_listing_directories_are_the_layout_parents(tmp_path):
+    """The home page lists sources and sheets, and must not spell the layout
+    out a second time to do it."""
+    p = Paths(root=tmp_path)
+    assert p.sources_dir() == p.source_dir("x").parent
+    assert p.cheatsheets_dir() == p.cheatsheet_file("x").parent
