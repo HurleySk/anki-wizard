@@ -206,6 +206,56 @@ def test_a_sheet_title_falls_back_when_the_config_is_unreadable(workspace):
     assert home.sheet_title("stats", workspace) == "stats"
 
 
+def test_sheet_page_renders_the_approved_formulas(workspace):
+    workspace.config_file().write_text("deck: Fundamentals of Statistics\n")
+    write_sheet(
+        workspace,
+        "fundamentals-of-statistics",
+        [
+            Formula(id="f-0001", tex="a=b", label="Kept", state="approved"),
+            Formula(id="f-0002", tex="c=d", label="Pending", state="proposed"),
+        ],
+    )
+    html = home.sheet_page("fundamentals-of-statistics", workspace)
+
+    assert "Kept" in html
+    assert "a=b" in html
+    # Only the approved entries reach the printable page.
+    assert "Pending" not in html
+    assert "<title>Fundamentals of Statistics</title>" in html
+
+
+def test_sheet_page_links_home(workspace):
+    workspace.config_file().write_text("deck: Fundamentals of Statistics\n")
+    write_sheet(workspace, "fundamentals-of-statistics", [])
+    assert '<nav class="home"><a href="/">Home</a></nav>' in home.sheet_page(
+        "fundamentals-of-statistics", workspace
+    )
+
+
+def test_sheet_page_for_a_slug_that_is_not_the_course_raises(workspace):
+    workspace.config_file().write_text("deck: Fundamentals of Statistics\n")
+    write_sheet(workspace, "linear-algebra", [])
+    with pytest.raises(KeyError):
+        home.sheet_page("linear-algebra", workspace)
+
+
+def test_sheet_page_for_a_missing_sheet_raises(workspace):
+    workspace.config_file().write_text("deck: Fundamentals of Statistics\n")
+    with pytest.raises(KeyError):
+        home.sheet_page("fundamentals-of-statistics", workspace)
+
+
+def test_sheet_page_of_broken_yaml_raises_the_reason(workspace):
+    """A bad sheet is a 404 naming the reason, not a traceback out of the
+    server thread."""
+    workspace.config_file().write_text("deck: Fundamentals of Statistics\n")
+    workspace.cheatsheets_dir().mkdir()
+    workspace.cheatsheet_file("fundamentals-of-statistics").write_text("- [unclosed\n")
+    with pytest.raises(ValueError):
+        home.sheet_page("fundamentals-of-statistics", workspace)
+
+
 # --- sources -----------------------------------------------------------------
 
 

@@ -1,13 +1,14 @@
-"""The home page and the problem set reader.
+"""The home page, the cheat sheet, and the problem set reader.
 
-Both are built on request from what is on disk and written to no file, so
-they cannot go stale. Everything here is pure -- a Paths in, HTML out -- and
-the pad server is what puts a URL in front of it.
+Each is built on request from what is on disk, so none of them can carry a
+page shell older than the running code. Everything here is pure -- a Paths
+in, HTML out -- and the pad server is what puts a URL in front of it.
 
 A page must never fail to render because of one bad file under the root: a
 broken cursor is listed with a note saying so, and the rest of the page
-stands. The one exception is a problem page for a slug with no manifest,
-which is the 404 the server sends.
+stands. The exceptions are the pages the server sends a 404 for instead: a
+problem page for a slug with no manifest, and a sheet for a slug that is not
+this directory's course.
 """
 
 import json
@@ -19,7 +20,7 @@ from urllib.parse import quote
 
 import yaml
 
-from anki_wizard.cheatsheet import load_sheet
+from anki_wizard.cheatsheet import load_sheet, render_sheet_page
 from anki_wizard.config import load_config
 from anki_wizard.cursor import load_cursor
 from anki_wizard.outline import load_outline
@@ -143,6 +144,33 @@ def sheet_title(slug: str, paths: Paths) -> str:
     if deck is not None and deck_slug(deck) == slug:
         return deck
     return slug
+
+
+def sheet_page(slug: str, paths: Paths) -> str:
+    """A course's printable sheet, built from its YAML.
+
+    Built on request rather than read from the file the reviews write, so
+    the page carries the running shell: a stored page keeps whatever markup
+    was current when it was last written, and nothing rebuilds it when the
+    shell around it changes.
+
+    Raises KeyError for a slug that is not this directory's course or has no
+    sheet, and ValueError for a sheet that will not load -- the two the
+    server turns into a 404.
+    """
+    deck = configured_deck(paths)
+    if deck is None or deck_slug(deck) != slug:
+        raise KeyError(slug)
+    path = paths.cheatsheet_file(slug)
+    if not path.exists():
+        raise KeyError(slug)
+    try:
+        formulas = load_sheet(path)
+    except (OSError, yaml.YAMLError) as exc:
+        # load_sheet raises ValueError itself for a bad row; a parse or read
+        # failure is the same kind of answer to the same question.
+        raise ValueError(f"{path} is not a readable cheat sheet: {exc}") from exc
+    return render_sheet_page(deck, formulas)[0]
 
 
 def sources(paths: Paths) -> dict:
