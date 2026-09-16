@@ -191,3 +191,14 @@ def test_card_blocks_render_html_fields_unescaped(proposals):
     assert "<b>bold</b>" in page
     assert "\\(x^2\\)" in page
     assert "&lt;b&gt;" not in page
+
+
+def test_open_home_creates_the_pad_directory(workspace):
+    """A fresh root has no pad/ yet, and the server needs a directory to
+    serve before there is anything in it."""
+    from anki_wizard.tools import open_home
+
+    result = open_home(workspace, viewer="none")
+
+    assert result == {"viewer": "none", "opened": False}
+    assert workspace.pad_dir().is_dir()

@@ -85,6 +85,14 @@ class Session:
     def keep(self, name: str) -> dict:
         return tools.promote_pad(name, paths=self.paths)
 
+    def home(self) -> dict:
+        """Where the home page is: the front door to everything under the root."""
+        return tools.open_home(
+            self.paths,
+            viewer=self.config.pad_viewer,
+            server_timeout_minutes=self.config.pad_server_timeout_minutes,
+        )
+
     def revise(self, slug: str, card_id: str, **edits) -> dict:
         return tools.revise_card(
             slug, card_id, self.client, paths=self.paths, deck=self.config.deck, **edits

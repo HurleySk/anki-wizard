@@ -146,3 +146,9 @@ def test_session_ingest_edx_passes_paths_through(tmp_path, monkeypatch):
     assert seen["slug"] == "pset"
     assert seen["paths"] == s.paths
     assert seen["headless"] is True
+
+
+def test_session_home_uses_the_configured_viewer(tmp_path):
+    (tmp_path / "config.yaml").write_text(yaml.safe_dump({"pad_viewer": "none"}))
+    s = Session(root=tmp_path)
+    assert s.home() == {"viewer": "none", "opened": False}

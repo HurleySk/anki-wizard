@@ -216,6 +216,37 @@ def open_page(
     }
 
 
+def open_root(
+    root: Path,
+    viewer: str = "vscode",
+    idle_timeout_minutes: float = DEFAULT_IDLE_TIMEOUT_MINUTES,
+) -> dict:
+    """The home URL of a served directory, with a server up to answer it.
+
+    The home page is built by the server on request and has no file, so
+    unlike open_page there is nothing for the browser viewer to open
+    directly and no file URI to fall back to: every viewer but "none" needs
+    the server, and a server that will not start is an error here.
+    """
+    if viewer not in VIEWERS:
+        raise ValueError(
+            f"unknown viewer {viewer!r}; expected one of {', '.join(VIEWERS)}"
+        )
+    if viewer == "none":
+        return {"viewer": "none", "opened": False}
+
+    record = start_detached(root.resolve(), idle_timeout_minutes=idle_timeout_minutes)
+    url = f"http://{record['host']}:{record['port']}/"
+    if viewer == "browser":
+        return {"viewer": "browser", "opened": bool(webbrowser.open(url)), "url": url}
+    return {
+        "viewer": "vscode",
+        "opened": False,
+        "url": url,
+        "expires_after_idle_minutes": record["idle_timeout_minutes"],
+    }
+
+
 def free_port(host: str = DEFAULT_HOST) -> int:
     """An unused port, for tests that need one that is definitely free."""
     with socket.socket() as sock:

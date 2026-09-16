@@ -390,3 +390,38 @@ def test_the_health_check_does_not_count_as_use(pad):
         assert server.idle_seconds < 60
     finally:
         server.server_close()
+
+
+# --- open_root ---------------------------------------------------------------
+
+
+def test_open_root_returns_the_home_url(pad, browser):
+    result = viewer.open_root(pad, viewer="vscode")
+
+    assert result["viewer"] == "vscode"
+    assert result["opened"] is False
+    assert result["url"].endswith("/")
+    assert fetch(result["url"])[0] == 200
+    assert browser == []
+
+
+def test_open_root_in_a_browser_still_needs_the_server(pad, browser):
+    """The home page has no file for a browser to open, so unlike open_page
+    the browser viewer serves it too."""
+    result = viewer.open_root(pad, viewer="browser")
+
+    assert result["viewer"] == "browser"
+    assert result["opened"] is True
+    assert browser == [result["url"]]
+    assert fetch(result["url"])[0] == 200
+
+
+def test_open_root_none_starts_nothing(pad, browser):
+    assert viewer.open_root(pad, viewer="none") == {"viewer": "none", "opened": False}
+    assert browser == []
+    assert not viewer.pidfile(pad).exists()
+
+
+def test_open_root_refuses_an_unknown_viewer(pad):
+    with pytest.raises(ValueError, match="unknown viewer"):
+        viewer.open_root(pad, viewer="chrome")

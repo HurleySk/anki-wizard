@@ -26,7 +26,7 @@ from anki_wizard.outline import build_outline, load_outline, save_outline
 from anki_wizard.paths import Paths
 from anki_wizard.pdf import extract_text, render_page
 from anki_wizard.render import render_html
-from anki_wizard.viewer import open_page
+from anki_wizard.viewer import open_page, open_root
 
 
 class PushInterrupted(RuntimeError):
@@ -387,6 +387,23 @@ def promote_pad(name: str, paths: Paths) -> dict:
     note.parent.mkdir(parents=True, exist_ok=True)
     pad.rename(note)
     return {"name": name, "path": str(note)}
+
+
+def open_home(
+    paths: Paths,
+    viewer: str = "vscode",
+    server_timeout_minutes: float = 30.0,
+) -> dict:
+    """Report where the home page can be read, starting the server if needed.
+
+    The home page lists the pad, kept notes, cheat sheets, and sources, and
+    reviews nothing. viewer is passed in rather than read from config for
+    the same reason as render_pad's.
+    """
+    pad = paths.pad_dir()
+    # The server serves this directory, and a fresh root has not made it yet.
+    pad.mkdir(parents=True, exist_ok=True)
+    return open_root(pad, viewer=viewer, idle_timeout_minutes=server_timeout_minutes)
 
 
 def _cover_settled_sections(slug: str, cards: list, paths: Paths) -> list[str]:
