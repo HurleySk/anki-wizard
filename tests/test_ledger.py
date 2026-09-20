@@ -206,3 +206,29 @@ def test_duplicate_ids_are_refused(tmp_path):
     )
     with pytest.raises(ValueError, match="c-0001"):
         load_ledger(path)
+
+
+@pytest.mark.parametrize("field", ["front", "back", "why"])
+def test_append_refuses_a_backslash_escaped_quote(tmp_path, field):
+    """A JSON-style escape that was never collapsed reaches Anki as a literal
+    backslash in front of the quote. No card field has a use for the pair."""
+    proposal = {"front": "f", "back": "b", field: r"the \"standard error\" of"}
+    with pytest.raises(ValueError, match="backslash"):
+        append_cards(tmp_path / "cards.yaml", [proposal], CardSource(slug="s"))
+    assert load_ledger(tmp_path / "cards.yaml") == []
+
+
+def test_edit_refuses_a_backslash_escaped_quote():
+    from anki_wizard.ledger import edit_card
+
+    with pytest.raises(ValueError, match="backslash"):
+        edit_card(a_card(), back=r"\"all \(n\)\", a single term")
+
+
+def test_edit_can_repair_a_card_that_already_holds_one():
+    """The guard looks at what is being written, not at what is there, or the
+    cards it exists to fix could never be fixed."""
+    from anki_wizard.ledger import edit_card
+
+    broken = a_card(back=r"\"quoted\"", why=r"still \"broken\" here")
+    assert edit_card(broken, back='"quoted"').back == '"quoted"'

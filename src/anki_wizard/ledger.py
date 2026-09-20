@@ -179,6 +179,21 @@ def next_card_id(cards: list[Card | AdoptedNote]) -> str:
     return f"c-{highest + 1:04d}"
 
 
+def _refuse_escaped_quotes(**fields: str | None) -> None:
+    """Refuse a backslash in front of a double quote in any card field.
+
+    The pair is a JSON or shell escape that was never collapsed on its way
+    here. Anki shows it as typed, backslash included, and neither HTML nor
+    MathJax has a use for it, so nothing legitimate is lost by refusing.
+    """
+    for name, value in fields.items():
+        if value and '\\"' in value:
+            raise ValueError(
+                f"{name} contains a backslash before a double quote, which "
+                "Anki would show literally. Write the quote on its own."
+            )
+
+
 def append_cards(path: Path, proposals: list[dict], source: CardSource) -> list[Card]:
     """Append proposed cards to the ledger, assigning sequential ids.
 
@@ -189,6 +204,11 @@ def append_cards(path: Path, proposals: list[dict], source: CardSource) -> list[
         cards = load_ledger(path)
         added: list[Card] = []
         for proposal in proposals:
+            _refuse_escaped_quotes(
+                front=proposal["front"],
+                back=proposal["back"],
+                why=proposal.get("why"),
+            )
             card = Card(
                 id=next_card_id(cards + added),
                 front=proposal["front"],
@@ -245,6 +265,9 @@ def edit_card(
             f"card {card.id} is {card.state}, which is terminal, so it cannot be "
             "edited. Propose a new card instead."
         )
+    # Only what is being written is checked, so a card that already holds
+    # the pair in one field can still be repaired a field at a time.
+    _refuse_escaped_quotes(front=front, back=back, why=why)
     new_front = card.front if front is None else front
     new_back = card.back if back is None else back
     new_why = card.why if why is None else why
