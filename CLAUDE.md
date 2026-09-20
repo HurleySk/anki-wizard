@@ -415,6 +415,17 @@ on several lectures at once, and the subject is what the reader will want to
 drill, so the subject is the grouping. Confirm each subject name with the
 user as for any deck name. A unit review files the same way.
 
+**Which unit is a question about the content, not about the set's name.**
+A set's title, URL, and file name carry the course site's own numbering,
+which does not track the lecture units: a sequence named `hw1_u1intro` can
+be built entirely from Unit II material. Read the problems, see which
+lectures they draw on, and file under the unit those lectures sit in.
+**When the content does not settle it, ask the user rather than inferring a
+unit from the name** -- Anki creates decks on demand, so a wrong unit
+silently produces a parallel tree that splits reviews with no error to
+notice. This is the same rule as for any deck name, and it bites hardest
+here because the name looks authoritative.
+
 Refiling a pushed card is `revise_card(..., lecture=...)`, which moves it in
 Anki with its scheduling intact -- review history lives on the card, not the
 deck. `scripts/assign_lecture.py <slug> "<path>"` does a whole slug at once and
@@ -467,7 +478,14 @@ each tab of one lecture. What to know when working one:
   duplicate that Anki will reject.
 - Cards from a problem set are worked problems: tag `worked-problem`, and
   file under the unit's `Problems` deck split by subject, as described under
-  lectures and subdecks. Confirm the unit and the subject names with the user.
+  lectures and subdecks -- **per unit, never per lecture**, however tidily
+  the set's problems seem to line up with one.
+- **Do not read the unit off the sequence's name.** `hw1_u1intro` in a URL
+  is the site's own numbering and routinely disagrees with the lecture
+  units; a "Homework 1" can be entirely Unit II material. Decide from the
+  problems themselves -- which lectures do they draw on? -- and **ask the
+  user when that is not decisive.** Confirm the unit and every subject name
+  before proposing, as for any deck name.
 - **The tool never signs in.** When it raises `LoginRequired`, hand the user
   the command it names and stop; the login is theirs to do in the window it
   opens. Do not retry, and do not look for another way in.
